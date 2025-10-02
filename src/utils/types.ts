@@ -8,6 +8,19 @@ export interface VarEntry {
 
 export interface NoteScope {
   vars: Map<VarName, VarEntry>;
+  formulas: Map<VarName, string>;
+  dependencies: Map<VarName, Set<VarName>>;
+  dependents: Map<VarName, Set<VarName>>;
+  lineCache: Map<string, LineCacheEntry>;
+}
+
+export interface LineCacheEntry {
+  expr: string;
+  value: any;
+  display: string;
+  dependencies: Set<VarName>;
+  type: "expression" | "convert";
+  targetUnit?: string;
 }
 
 export interface ToolkitSettings {
