@@ -7,7 +7,8 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   defaultUnitSystem: "SI",
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
-  globalVarsEnabled: false
+  globalVarsEnabled: false,
+  evaluationThrottleMs: 200
 };
 
 export class ToolkitSettingTab extends PluginSettingTab {
@@ -55,5 +56,12 @@ export class ToolkitSettingTab extends PluginSettingTab {
       .setDesc("Make variables available across notes (experimental)")
       .addToggle(t => t.setValue(this.plugin.settings.globalVarsEnabled)
         .onChange(async v => { this.plugin.settings.globalVarsEnabled = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName("Recalc debounce")
+      .setDesc("Delay (ms) before running calc blocks after edits")
+      .addSlider(s => s.setLimits(50, 1000, 10).setDynamicTooltip()
+        .setValue(this.plugin.settings.evaluationThrottleMs)
+        .onChange(async v => { this.plugin.settings.evaluationThrottleMs = v; await this.plugin.saveSettings(); }));
   }
 }

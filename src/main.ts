@@ -10,6 +10,8 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
+  private evalQueue = new Map<string, PendingEvaluation>();
+  private bypassThrottleUntil = 0;
 
   async onload() {
     console.log("Loading Engineering Toolkit");
@@ -26,16 +28,25 @@ export default class EngineeringToolkitPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {
-      const out = await this.calc.evaluateBlock(source, ctx);
-      el.appendChild(out);
-      this.currentScope = (this.calc as any)["getScope"](ctx.sourcePath);
-      this.refreshVariablesView(this.currentScope!);
+      const key = this.getEvaluationKey(source, el, ctx);
+      const evaluate = async () => {
+        const out = await this.calc.evaluateBlock(source, ctx);
+        el.empty();
+        el.appendChild(out);
+        this.currentScope = this.calc.getScope(ctx.sourcePath ?? "untitled");
+      };
+
+      if (this.shouldBypassThrottle()) {
+        return this.runEvaluationNow(key, evaluate);
+      }
+      return this.scheduleEvaluation(key, evaluate);
     });
 
     this.addCommand({
       id: "recalculate-note",
       name: "Recalculate current note",
       callback: async () => {
+        this.bypassThrottleUntil = Date.now() + Math.max(2 * this.settings.evaluationThrottleMs, 500);
         const file = this.app.workspace.getActiveFile();
         if (file) await this.app.workspace.getLeaf(false).openFile(file);
       }
@@ -66,6 +77,58 @@ export default class EngineeringToolkitPlugin extends Plugin {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VARS);
     for (const leaf of leaves) {
       (leaf.view as VariablesView).renderScope(scope || undefined);
+    }
+  }
+
+  private getEvaluationKey(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+    const file = ctx.sourcePath ?? "untitled";
+    const section = ctx.getSectionInfo(el);
+    if (section) return `${file}::${section.lineStart}-${section.lineEnd}`;
+    return `${file}::${source}`;
+  }
+
+  private shouldBypassThrottle() {
+    return Date.now() < this.bypassThrottleUntil;
+  }
+
+  private runEvaluationNow(key: string, evaluate: () => Promise<void>): Promise<void> {
+    const pending = this.evalQueue.get(key);
+    if (!pending) return evaluate();
+
+    window.clearTimeout(pending.timerId);
+    this.evalQueue.delete(key);
+    return evaluate().then(() => pending.resolve()).catch((err) => {
+      pending.reject(err);
+      throw err;
+    });
+  }
+
+  private scheduleEvaluation(key: string, evaluate: () => Promise<void>): Promise<void> {
+    const existing = this.evalQueue.get(key);
+    if (existing) {
+      existing.evaluate = evaluate;
+      window.clearTimeout(existing.timerId);
+      existing.timerId = window.setTimeout(() => this.flushEvaluation(key), this.settings.evaluationThrottleMs);
+      return existing.promise;
+    }
+
+    let resolve!: () => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    const timerId = window.setTimeout(() => this.flushEvaluation(key), this.settings.evaluationThrottleMs);
+    this.evalQueue.set(key, { evaluate, promise, resolve, reject, timerId });
+    return promise;
+  }
+
+  private async flushEvaluation(key: string) {
+    const pending = this.evalQueue.get(key);
+    if (!pending) return;
+    this.evalQueue.delete(key);
+    try {
+      await pending.evaluate();
+      pending.resolve();
+    } catch (err) {
+      pending.reject(err);
     }
   }
 
@@ -102,4 +165,12 @@ export default class EngineeringToolkitPlugin extends Plugin {
       modal.open();
     });
   }
+}
+
+interface PendingEvaluation {
+  evaluate: () => Promise<void>;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+  timerId: number;
 }
