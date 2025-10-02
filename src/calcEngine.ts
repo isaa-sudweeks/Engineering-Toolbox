@@ -1,4 +1,5 @@
 import { MarkdownPostProcessorContext } from "obsidian";
+
 import {
   math,
   formatUnitLatex,
@@ -7,7 +8,7 @@ import {
   formatValueParts,
   UnitSystem,
 } from "./utils/format";
-import type { NoteScope, VarEntry, GlobalVarEntry } from "./utils/types";
+import type { NoteScope, VarEntry, GlobalVarEntry, VarName, LineCacheEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
 export type EvaluatedLineType = "blank" | "comment" | "assignment" | "convert" | "expression" | "error";
@@ -36,6 +37,8 @@ export interface EvaluateOptions {
   scope?: NoteScope;
   /** Clear the working scope before evaluating */
   resetScope?: boolean;
+  /** Optional key to identify the calc block for caching */
+  blockKey?: string;
 }
 
 type LineResult =
@@ -83,8 +86,20 @@ export class CalcEngine {
   }
 
   getScope(filePath: string): NoteScope {
-    if (!this.scopes.has(filePath)) this.scopes.set(filePath, { vars: new Map() });
-    return this.scopes.get(filePath)!;
+    let scope = this.scopes.get(filePath);
+    if (!scope) {
+      scope = {
+        vars: new Map(),
+        formulas: new Map(),
+        dependencies: new Map(),
+        dependents: new Map(),
+        lineCache: new Map(),
+      };
+      this.scopes.set(filePath, scope);
+    } else {
+      this.ensureScopeMaps(scope);
+    }
+    return scope;
   }
 
   clearScope(filePath: string) { this.scopes.delete(filePath); }
@@ -96,10 +111,13 @@ export class CalcEngine {
 
     const filePath = ctx.sourcePath || "untitled";
     const useLatex = this.plugin.settings.latexFormatting;
+    const blockKey = this.buildBlockKey(ctx, source);
     const { entries, scope } = this.evaluateToEntries(source, filePath, {
       persist: true,
       resetScope: this.plugin.settings.autoRecalc,
+      blockKey,
     });
+
 
     for (const entry of entries) {
       if (entry.type === "blank") continue;
@@ -223,14 +241,19 @@ export class CalcEngine {
       workingScope = { vars: new Map() };
     }
 
+    this.ensureScopeMaps(workingScope);
     const system = this.plugin.settings.defaultUnitSystem;
     const entries: EvaluatedLine[] = [];
     const lines = source.split(/\r?\n/);
-    for (const raw of lines) {
+    const blockKey = options?.blockKey ?? `${filePath}:${hashString(source)}`;
+    const visitedLineKeys = new Set<string>();
+    lines.forEach((raw, index) => {
       const line = raw.trim();
+      const lineKey = `${blockKey}:${index}`;
+      visitedLineKeys.add(lineKey);
       if (!line) {
         entries.push({ raw, line: "", type: "blank" });
-        continue;
+        return;
       }
 
       try {
@@ -238,6 +261,8 @@ export class CalcEngine {
         if (result.kind === "comment") {
           entries.push({ raw, line, type: "comment", text: result.text, plain: result.plain });
         } else if (result.kind === "assignment") {
+          const dependencies = this.analyzeDependencies(result.expr ?? "");
+          if (result.name) this.updateDependencyGraph(workingScope, result.name, result.expr ?? "", dependencies);
           entries.push({
             raw,
             line,
@@ -252,6 +277,15 @@ export class CalcEngine {
             plain: result.plain,
           });
         } else if (result.kind === "conversion") {
+          const dependencies = this.analyzeDependencies(result.expr ?? "");
+          workingScope.lineCache.set(lineKey, {
+            expr: result.expr ?? "",
+            value: result.value,
+            display: result.display ?? "",
+            dependencies,
+            type: "convert",
+            targetUnit: result.target,
+          });
           entries.push({
             raw,
             line,
@@ -266,6 +300,14 @@ export class CalcEngine {
             plain: result.plain,
           });
         } else if (result.kind === "expression") {
+          const dependencies = this.analyzeDependencies(result.expr ?? "");
+          workingScope.lineCache.set(lineKey, {
+            expr: result.expr ?? "",
+            value: result.value,
+            display: result.display ?? "",
+            dependencies,
+            type: "expression",
+          });
           entries.push({
             raw,
             line,
@@ -282,6 +324,12 @@ export class CalcEngine {
       } catch (error: any) {
         const message = error?.message ?? String(error);
         entries.push({ raw, line, type: "error", error: message, plain: line });
+      }
+    });
+
+    for (const key of Array.from(workingScope.lineCache.keys())) {
+      if (key.startsWith(`${blockKey}:`) && !visitedLineKeys.has(key)) {
+        workingScope.lineCache.delete(key);
       }
     }
 
@@ -445,6 +493,55 @@ export class CalcEngine {
     return { displayValue, formatted };
   }
 
+  private ensureScopeMaps(scope: NoteScope) {
+    if (!scope.formulas) scope.formulas = new Map();
+    if (!scope.dependencies) scope.dependencies = new Map();
+    if (!scope.dependents) scope.dependents = new Map();
+    if (!scope.lineCache) scope.lineCache = new Map();
+  }
+
+  private buildBlockKey(ctx: MarkdownPostProcessorContext, source: string): string {
+    const docId = (ctx as any)?.docId;
+    if (docId !== undefined) return String(docId);
+    const path = ctx.sourcePath || "untitled";
+    return `${path}:${hashString(source)}`;
+  }
+
+  private analyzeDependencies(expr: string): Set<VarName> {
+    const dependencies = new Set<VarName>();
+    if (!expr) return dependencies;
+    try {
+      const node = math.parse(expr) as any;
+      node.traverse((child: any) => {
+        if (child?.isSymbolNode) dependencies.add(child.name as VarName);
+      });
+    } catch (error) {
+      console.debug("[CalcEngine] Failed to parse dependencies", { expr, error });
+    }
+    return dependencies;
+  }
+
+  private updateDependencyGraph(scope: NoteScope, name: VarName, expr: string, dependencies: Set<VarName>) {
+    const previous = scope.dependencies.get(name);
+    if (previous) {
+      for (const dep of previous) {
+        if (!dependencies.has(dep)) {
+          const dependents = scope.dependents.get(dep);
+          if (dependents) {
+            dependents.delete(name);
+            if (dependents.size === 0) scope.dependents.delete(dep);
+          }
+        }
+      }
+    }
+    for (const dep of dependencies) {
+      if (!scope.dependents.has(dep)) scope.dependents.set(dep, new Set());
+      scope.dependents.get(dep)!.add(name);
+    }
+    scope.dependencies.set(name, new Set(dependencies));
+    scope.formulas.set(name, expr);
+  }
+
   private buildGlobalEvalScope(skip?: string): Record<string, any> {
     const scope: Record<string, any> = {};
     for (const [key, entry] of this.globalVars.entries()) {
@@ -479,6 +576,15 @@ function splitConvert(line: string) {
   const m = line.match(/^(.*)\s(?:->|to)\s(.*?)$/);
   if (!m) throw new Error("Bad convert syntax. Use: expr -> unit");
   return { expr: m[1].trim(), target: m[2].trim() };
+}
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0; // convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function appendLatex(row: HTMLElement, latex: string) {
