@@ -53,6 +53,7 @@ export interface ToolkitSettings {
   labJournalEnabled: boolean;
   diagramHelpersEnabled: boolean;
   modelEmbedsEnabled: boolean;
+  autocompleteEnabled: boolean;
   latexFormatting: boolean;
   modelViewerDefaults: ModelViewerDefaults;
   exportFormat: "script" | "notebook";

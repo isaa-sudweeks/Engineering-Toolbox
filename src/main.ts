@@ -7,6 +7,8 @@ import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
 import { UnitPickerModal } from "./unitPicker";
 import { PythonExporter } from "./exporter";
+import { ScopeCompletionManager } from "./autocomplete";
+import type { Completion } from "@codemirror/autocomplete";
 
 export default class EngineeringToolkitPlugin extends Plugin {
   settings: ToolkitSettings;
@@ -15,6 +17,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private currentScope: NoteScope | null = null;
   private loadedGlobalVars: Record<string, GlobalVarEntry> = {};
   public modelViewerAvailable = false;
+  private completionManager!: ScopeCompletionManager;
   private diagramIntegrations: DiagramIntegration[] = [
     {
       key: "excalidraw",
@@ -57,7 +60,10 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.calc = new CalcEngine(this);
     this.calc.loadGlobalVars(this.loadedGlobalVars);
     this.exporter = new PythonExporter(this);
+    this.completionManager = new ScopeCompletionManager(this);
+    this.registerEditorExtension(this.completionManager.extension);
     this.refreshModelViewerAvailability(true);
+    this.updateAutocompleteSetting();
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
 
@@ -273,6 +279,43 @@ export default class EngineeringToolkitPlugin extends Plugin {
 
   getGlobalVariables() {
     return this.calc?.getGlobalVariables() ?? new Map();
+  }
+
+  handleScopeChanged(_filePath: string | null) {
+    if (!this.completionManager) return;
+    if (!this.settings.autocompleteEnabled) return;
+    this.completionManager.notifyChanged();
+  }
+
+  updateAutocompleteSetting() {
+    if (!this.completionManager) return;
+    this.completionManager.updateEnabledState();
+    if (this.settings.autocompleteEnabled) this.completionManager.notifyChanged();
+  }
+
+  getScopeCompletions(filePath: string | null): Completion[] {
+    const completions: Completion[] = [];
+    const seen = new Set<string>();
+    const add = (label: string, detail: string, type: Completion["type"]) => {
+      if (seen.has(label)) return;
+      seen.add(label);
+      completions.push({ label, detail, type });
+    };
+
+    if (filePath) {
+      const scope = this.calc.peekScope(filePath);
+      if (scope) {
+        for (const name of scope.vars.keys()) add(name, "Local variable", "variable");
+      }
+    }
+
+    if (this.settings.globalVarsEnabled) {
+      for (const [name] of this.calc.listGlobalVars()) add(name, "Global variable", "variable");
+    }
+
+    for (const unit of this.calc.listKnownUnits()) add(unit, "Unit", "constant");
+
+    return completions;
   }
 
   private async insertDiagramFlow(preselectedKey?: string) {
@@ -627,6 +670,9 @@ export default class EngineeringToolkitPlugin extends Plugin {
     }
     if (typeof this.settings.modelEmbedsEnabled !== "boolean") {
       this.settings.modelEmbedsEnabled = DEFAULT_SETTINGS.modelEmbedsEnabled;
+    }
+    if (typeof this.settings.autocompleteEnabled !== "boolean") {
+      this.settings.autocompleteEnabled = DEFAULT_SETTINGS.autocompleteEnabled;
     }
     if (!this.settings.labIndexPath) {
       this.settings.labIndexPath = DEFAULT_SETTINGS.labIndexPath;

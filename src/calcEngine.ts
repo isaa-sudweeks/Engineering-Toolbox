@@ -80,6 +80,9 @@ export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
   private globalVars = new Map<string, GlobalVarEntry>();
+  private readonly unitNames = Object.freeze(
+    Object.keys(((math as any).Unit?.UNITS ?? {}) as Record<string, unknown>).sort((a, b) => a.localeCompare(b))
+  );
 
   constructor(plugin: EngineeringToolkitPlugin) {
     this.plugin = plugin;
@@ -101,9 +104,25 @@ export class CalcEngine {
     }
     return scope;
   }
+  peekScope(filePath: string): NoteScope | null {
+    const scope = this.scopes.get(filePath);
+    if (!scope) return null;
+    this.ensureScopeMaps(scope);
+    return scope;
+  }
 
-  clearScope(filePath: string) { this.scopes.delete(filePath); }
-  clearAllScopes() { this.scopes.clear(); }
+  clearScope(filePath: string) {
+    const removed = this.scopes.delete(filePath);
+    if (removed) this.plugin.handleScopeChanged(filePath);
+  }
+  clearAllScopes() {
+    if (this.scopes.size === 0) return;
+    this.scopes.clear();
+    this.plugin.handleScopeChanged(null);
+  }
+
+  listGlobalVars(): ReadonlyMap<string, GlobalVarEntry> { return this.globalVars; }
+  listKnownUnits(): readonly string[] { return this.unitNames; }
 
   async evaluateBlock(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
     const container = document.createElement("div");
@@ -186,6 +205,7 @@ export class CalcEngine {
     }
 
     this.plugin.refreshVariablesView(scope);
+    this.plugin.handleScopeChanged(filePath);
     return container;
   }
 
@@ -224,6 +244,7 @@ export class CalcEngine {
     }
 
     this.plugin.refreshVariablesView(scope);
+    this.plugin.handleScopeChanged(filePath);
     return span;
   }
 
@@ -369,6 +390,7 @@ export class CalcEngine {
         source,
       });
     }
+    this.plugin.handleScopeChanged(null);
   }
 
   getGlobalVarsSnapshot(): Array<[string, GlobalVarEntry]> {
@@ -406,6 +428,7 @@ export class CalcEngine {
     };
     this.globalVars.set(trimmedName, entry);
     await this.plugin.saveToolkitData();
+    this.plugin.handleScopeChanged(null);
     return entry;
   }
 
@@ -414,6 +437,7 @@ export class CalcEngine {
     if (!this.globalVars.has(trimmedName)) return;
     this.globalVars.delete(trimmedName);
     await this.plugin.saveToolkitData();
+    this.plugin.handleScopeChanged(null);
   }
 
   private evalExpression(expr: string, scope: NoteScope): any {

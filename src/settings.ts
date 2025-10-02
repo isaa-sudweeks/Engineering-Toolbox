@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   labJournalEnabled: true,
   diagramHelpersEnabled: true,
   modelEmbedsEnabled: true,
+  autocompleteEnabled: true,
   latexFormatting: true,
   modelViewerDefaults: {
     altText: "3D model",
@@ -283,6 +284,18 @@ export class ToolkitSettingTab extends PluginSettingTab {
             this.plugin.settings.modelEmbedsEnabled = v;
             await this.plugin.saveSettings();
             await this.plugin.applyFeatureToggles();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Calc block autocomplete")
+      .setDesc("Suggest scope variables and units while editing calc blocks")
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.autocompleteEnabled)
+          .onChange(async v => {
+            this.plugin.settings.autocompleteEnabled = v;
+            await this.plugin.saveSettings();
+            this.plugin.updateAutocompleteSetting();
           })
       );
 
