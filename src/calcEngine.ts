@@ -1,5 +1,5 @@
 import { MarkdownPostProcessorContext } from "obsidian";
-import { math, formatUnit } from "./utils/format";
+import { math, formatUnit, formatUnitLatex, escapeLatex } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
@@ -23,6 +23,7 @@ export class CalcEngine {
     const filePath = ctx.sourcePath || "untitled";
     if (!this.plugin.settings.autoRecalc) this.clearScope(filePath);
     const scope = this.getScope(filePath);
+    const useLatex = this.plugin.settings.latexFormatting;
 
     const lines = source.split(/\r?\n/);
     for (const raw of lines) {
@@ -32,24 +33,59 @@ export class CalcEngine {
       row.classList.add("calc-line");
       try {
         if (line.startsWith("//") || line.startsWith("#")) {
-          row.innerHTML = `<span class="calc-comment">${escapeHtml(line)}</span>`;
+          const comment = document.createElement("span");
+          comment.classList.add("calc-comment");
+          comment.textContent = line;
+          row.appendChild(comment);
+          row.dataset.plain = line;
         } else if (isAssignment(line)) {
           const { name, expr } = splitAssignment(line);
           const value = this.evalExpression(expr, scope);
           const display = formatUnit(value, this.plugin.settings.sigFigs);
           scope.vars.set(name, { value, display });
-          row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${display}</span>`;
+          row.dataset.plain = `${name} = ${display}`;
+          if (useLatex) {
+            const latex = buildAssignmentLatex(name, expr, value, this.plugin.settings.sigFigs);
+            appendLatex(row, latex);
+          } else {
+            const lhs = document.createElement("span");
+            lhs.classList.add("lhs");
+            lhs.textContent = name;
+            row.appendChild(lhs);
+            const rhs = document.createElement("span");
+            rhs.classList.add("rhs");
+            rhs.textContent = `= ${display}`;
+            row.appendChild(rhs);
+          }
         } else if (isConvert(line)) {
           const { expr, target } = splitConvert(line);
           const v = this.evalExpression(expr, scope);
           let converted = v;
           if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
           const display = formatUnit(converted, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${escapeHtml(expr)} → ${escapeHtml(target)} = ${display}</span>`;
+          row.dataset.plain = `${expr} → ${target} = ${display}`;
+          if (useLatex) {
+            const latex = buildConversionLatex(expr, target, converted, this.plugin.settings.sigFigs);
+            appendLatex(row, latex);
+          } else {
+            const rhs = document.createElement("span");
+            rhs.classList.add("rhs");
+            rhs.textContent = `${expr} → ${target} = ${display}`;
+            row.appendChild(rhs);
+          }
         } else {
           const value = this.evalExpression(line, scope);
           const display = formatUnit(value, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${display}</span>`;
+          row.dataset.plain = `${line} = ${display}`;
+          if (useLatex) {
+            const latex = buildExpressionLatex(line, value, this.plugin.settings.sigFigs);
+            appendLatex(row, latex);
+          } else {
+            const rhs = document.createElement("span");
+            rhs.classList.add("rhs");
+            rhs.textContent = display;
+            row.appendChild(rhs);
+          }
         }
       } catch (e: any) {
         row.classList.add("calc-error");
@@ -82,6 +118,50 @@ function splitConvert(line: string) {
   if (!m) throw new Error("Bad convert syntax. Use: expr -> unit");
   return { expr: m[1].trim(), target: m[2].trim() };
 }
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]!));
+
+function appendLatex(row: HTMLElement, latex: string) {
+  const wrapper = document.createElement("div");
+  wrapper.classList.add("calc-equation", "mathjax-block");
+  wrapper.textContent = `$$${latex}$$`;
+  row.appendChild(wrapper);
+}
+
+function buildAssignmentLatex(name: string, expr: string, value: any, precision: number): string {
+  const lhs = identifierToLatex(name);
+  const exprTex = expressionToLatex(expr);
+  const result = formatUnitLatex(value, precision);
+  return wrapAligned([`${lhs} &= ${exprTex}`, `&= ${result}`]);
+}
+
+function buildConversionLatex(expr: string, target: string, value: any, precision: number): string {
+  const exprTex = expressionToLatex(expr);
+  const targetTex = expressionToLatex(target);
+  const result = formatUnitLatex(value, precision);
+  return wrapAligned([`${exprTex} &\rightarrow ${targetTex}`, `&= ${result}`]);
+}
+
+function buildExpressionLatex(expr: string, value: any, precision: number): string {
+  const exprTex = expressionToLatex(expr);
+  const result = formatUnitLatex(value, precision);
+  return wrapAligned([`${exprTex} &= ${result}`]);
+}
+
+function expressionToLatex(expr: string): string {
+  try {
+    return math.parse(expr).toTex({ parenthesis: "auto" }).trim();
+  } catch {
+    return escapeLatex(expr);
+  }
+}
+
+function identifierToLatex(name: string): string {
+  try {
+    return math.parse(name).toTex({ parenthesis: "auto" }).trim();
+  } catch {
+    return escapeLatex(name);
+  }
+}
+
+function wrapAligned(lines: string[]): string {
+  return `\\begin{aligned} ${lines.join(" \\\\ ")} \\end{aligned}`;
 }
