@@ -18,6 +18,8 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private loadedGlobalVars: Record<string, GlobalVarEntry> = {};
   public modelViewerAvailable = false;
   private completionManager!: ScopeCompletionManager;
+  private evalQueue = new Map<string, PendingEvaluation>();
+  private bypassThrottleUntil = 0;
   private diagramIntegrations: DiagramIntegration[] = [
     {
       key: "excalidraw",
@@ -81,11 +83,21 @@ export default class EngineeringToolkitPlugin extends Plugin {
     });
 
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {
-      const out = await this.calc.evaluateBlock(source, ctx);
-      el.appendChild(out);
-      const scope = this.calc.getScope(ctx.sourcePath || "untitled");
-      this.currentScope = scope;
-      this.refreshVariablesView(scope);
+      const key = this.getEvaluationKey(source, el, ctx);
+      const evaluate = async () => {
+        const out = await this.calc.evaluateBlock(source, ctx);
+        el.empty();
+        el.appendChild(out);
+        const scope = this.calc.getScope(ctx.sourcePath || "untitled");
+        this.currentScope = scope;
+        this.refreshVariablesView(scope);
+      };
+
+      if (this.shouldBypassThrottle()) {
+        await this.runEvaluationNow(key, evaluate);
+      } else {
+        await this.scheduleEvaluation(key, evaluate);
+      }
     });
 
     this.registerMarkdownPostProcessor(async (el, ctx) => {
@@ -146,7 +158,10 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.addCommand({
       id: "recalculate-note",
       name: "Recalculate current note",
-      callback: async () => { await this.recalculateActiveNote(); }
+      callback: async () => {
+        this.bypassThrottleUntil = Date.now() + Math.max(2 * this.settings.evaluationThrottleMs, 500);
+        await this.recalculateActiveNote();
+      }
     });
 
     this.addCommand({
@@ -316,6 +331,61 @@ export default class EngineeringToolkitPlugin extends Plugin {
     for (const unit of this.calc.listKnownUnits()) add(unit, "Unit", "constant");
 
     return completions;
+  }
+
+  private getEvaluationKey(source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) {
+    const file = ctx.sourcePath || "untitled";
+    const section = ctx.getSectionInfo?.(el);
+    if (section) return `${file}::${section.lineStart}-${section.lineEnd}`;
+    return `${file}::${hashString(source)}`;
+  }
+
+  private shouldBypassThrottle() {
+    return Date.now() < this.bypassThrottleUntil;
+  }
+
+  private async runEvaluationNow(key: string, evaluate: () => Promise<void>): Promise<void> {
+    const pending = this.evalQueue.get(key);
+    if (!pending) return evaluate();
+
+    window.clearTimeout(pending.timerId);
+    this.evalQueue.delete(key);
+    try {
+      await evaluate();
+      pending.resolve();
+    } catch (error) {
+      pending.reject(error);
+      throw error;
+    }
+  }
+
+  private scheduleEvaluation(key: string, evaluate: () => Promise<void>): Promise<void> {
+    const existing = this.evalQueue.get(key);
+    if (existing) {
+      existing.evaluate = evaluate;
+      window.clearTimeout(existing.timerId);
+      existing.timerId = window.setTimeout(() => this.flushEvaluation(key), this.settings.evaluationThrottleMs);
+      return existing.promise;
+    }
+
+    let resolve!: () => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    const timerId = window.setTimeout(() => this.flushEvaluation(key), this.settings.evaluationThrottleMs);
+    this.evalQueue.set(key, { evaluate, promise, resolve, reject, timerId });
+    return promise;
+  }
+
+  private async flushEvaluation(key: string) {
+    const pending = this.evalQueue.get(key);
+    if (!pending) return;
+    this.evalQueue.delete(key);
+    try {
+      await pending.evaluate();
+      pending.resolve();
+    } catch (error) {
+      pending.reject(error);
+    }
   }
 
   private async insertDiagramFlow(preselectedKey?: string) {
@@ -633,6 +703,8 @@ export default class EngineeringToolkitPlugin extends Plugin {
 
   async onunload() {
     console.log("Unloading Engineering Toolkit");
+    for (const pending of this.evalQueue.values()) window.clearTimeout(pending.timerId);
+    this.evalQueue.clear();
     this.app.workspace.getLeavesOfType(VIEW_TYPE_VARS).forEach(l => l.detach());
   }
 
@@ -673,6 +745,9 @@ export default class EngineeringToolkitPlugin extends Plugin {
     }
     if (typeof this.settings.autocompleteEnabled !== "boolean") {
       this.settings.autocompleteEnabled = DEFAULT_SETTINGS.autocompleteEnabled;
+    }
+    if (!Number.isFinite(this.settings.evaluationThrottleMs)) {
+      this.settings.evaluationThrottleMs = DEFAULT_SETTINGS.evaluationThrottleMs;
     }
     if (!this.settings.labIndexPath) {
       this.settings.labIndexPath = DEFAULT_SETTINGS.labIndexPath;
@@ -766,4 +841,21 @@ function extractComment(rhs: string): { leading: string; comment: string } {
   }
   const leading = body.match(/^\s*/)?.[0] ?? "";
   return { leading, comment };
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash << 5) - hash + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+interface PendingEvaluation {
+  evaluate: () => Promise<void>;
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+  timerId: number;
 }

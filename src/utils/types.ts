@@ -54,6 +54,7 @@ export interface ToolkitSettings {
   diagramHelpersEnabled: boolean;
   modelEmbedsEnabled: boolean;
   autocompleteEnabled: boolean;
+  evaluationThrottleMs: number;
   latexFormatting: boolean;
   modelViewerDefaults: ModelViewerDefaults;
   exportFormat: "script" | "notebook";

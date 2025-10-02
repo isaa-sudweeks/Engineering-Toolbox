@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   diagramHelpersEnabled: true,
   modelEmbedsEnabled: true,
   autocompleteEnabled: true,
+  evaluationThrottleMs: 200,
   latexFormatting: true,
   modelViewerDefaults: {
     altText: "3D model",
@@ -236,6 +237,19 @@ export class ToolkitSettingTab extends PluginSettingTab {
 
     globalsSection = containerEl.createEl("div", { cls: "global-vars-section" });
     renderGlobals();
+
+    new Setting(containerEl)
+      .setName("Recalc debounce")
+      .setDesc("Delay (ms) before running calc blocks after edits")
+      .addSlider(s =>
+        s.setLimits(50, 1000, 10)
+          .setDynamicTooltip()
+          .setValue(this.plugin.settings.evaluationThrottleMs)
+          .onChange(async v => {
+            this.plugin.settings.evaluationThrottleMs = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     containerEl.createEl("h3", { text: "Optional modules" });
 
