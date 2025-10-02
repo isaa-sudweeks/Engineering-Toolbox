@@ -1,50 +1,30 @@
 import { Notice, TFile } from "obsidian";
 import type EngineeringToolkitPlugin from "./main";
+import {
+  buildLabNoteContent,
+  getLabNoteFileName,
+  getLabNotePath,
+  normalizeLabNotesFolder,
+  sanitizeLabNoteTitle,
+} from "./labJournalUtils";
 
 export async function createExperimentNote(plugin: EngineeringToolkitPlugin) {
   const app = plugin.app;
   const title = await plugin.prompt("Enter experiment title:");
   if (!title) return;
   const dateStr = (app as any).moment().format("YYYY-MM-DD");
-  const folder = plugin.settings.labNotesFolder || "Lab Journal";
-  const safeTitle = title.replace(/[\\/:*?"<>|]/g, "-");
-  const fileName = `${dateStr} ${safeTitle}.md";
-  const path = `${folder}/${fileName}`;
+  const folderSetting = plugin.settings.labNotesFolder || "Lab Journal";
+  const folder = normalizeLabNotesFolder(folderSetting);
+  const safeTitle = sanitizeLabNoteTitle(title);
+  const fileName = getLabNoteFileName(dateStr, safeTitle);
+  const path = getLabNotePath(folder, fileName);
 
-  const content = `---
-experiment_id: ${dateStr}-${safeTitle.replace(/\s+/g,"-")}
-date: ${dateStr}
-tags: lab
----
+  if (app.vault.getAbstractFileByPath(path)) {
+    new Notice("An experiment note with this title already exists.");
+    return;
+  }
 
-# ${title}
-
-**Date:** ${dateStr}  
-**Researchers:** 
-
-## Objective
-- 
-
-## Procedure
-1. 
-
-## Data & Calculations
-\\`\\`\\`calc
-# Define inputs
-mass = 5 kg
-accel = 9.81 m/s^2
-force = mass * accel
-
-# Convert example
-force -> lbf
-\\`\\`\\`
-
-## Results
-- 
-
-## Conclusion
-- 
-`;
+  const content = buildLabNoteContent(title, dateStr, safeTitle);
 
   if (!app.vault.getAbstractFileByPath(folder)) {
     await app.vault.createFolder(folder).catch(() => {});
