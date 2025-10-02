@@ -38,6 +38,9 @@ export interface ToolkitSettings {
   globalVarsEnabled: boolean;
   latexFormatting: boolean;
   modelViewerDefaults: ModelViewerDefaults;
+  exportFormat: "script" | "notebook";
+  exportOutputFolder: string;
+  exportVariableStyle: "preserve" | "snake_case" | "camelCase";
 }
 
 export interface ToolkitData {

@@ -10,6 +10,34 @@ import {
 import type { NoteScope, VarEntry, GlobalVarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
+export type EvaluatedLineType = "blank" | "comment" | "assignment" | "convert" | "expression" | "error";
+
+export interface EvaluatedLine {
+  raw: string;
+  line: string;
+  type: EvaluatedLineType;
+  name?: string;
+  expr?: string;
+  target?: string;
+  value?: any;
+  display?: string;
+  displayValue?: any;
+  magnitude?: string;
+  unit?: string;
+  plain?: string;
+  text?: string;
+  error?: string;
+}
+
+export interface EvaluateOptions {
+  /** When false, scope mutations are kept local to the provided scope */
+  persist?: boolean;
+  /** Optional working scope when persist is false */
+  scope?: NoteScope;
+  /** Clear the working scope before evaluating */
+  resetScope?: boolean;
+}
+
 type LineResult =
   | { kind: "comment"; text: string; plain: string }
   | {
@@ -66,65 +94,75 @@ export class CalcEngine {
     container.classList.add("calc-output");
 
     const filePath = ctx.sourcePath || "untitled";
-    if (this.plugin.settings.autoRecalc) this.clearScope(filePath);
-    const scope = this.getScope(filePath);
     const useLatex = this.plugin.settings.latexFormatting;
-    const system = this.plugin.settings.defaultUnitSystem;
+    const { entries, scope } = this.evaluateToEntries(source, filePath, {
+      persist: true,
+      resetScope: this.plugin.settings.autoRecalc,
+    });
 
-    const lines = source.split(/\r?\n/);
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
-
+    for (const entry of entries) {
+      if (entry.type === "blank") continue;
       const row = document.createElement("div");
       row.classList.add("calc-line");
-      try {
-        const result = this.evaluateLine(line, scope, system, raw.trim());
-        row.dataset.plain = result.plain;
+      row.dataset.plain = entry.plain ?? entry.line ?? "";
 
-        if (result.kind === "comment") {
-          const comment = document.createElement("span");
-          comment.classList.add("calc-comment");
-          comment.textContent = result.text;
-          row.appendChild(comment);
-        } else if (result.kind === "assignment") {
-          if (useLatex) {
-            const latex = buildAssignmentLatex(result.name, result.expr, result.displayValue, this.plugin.settings.sigFigs);
-            appendLatex(row, latex);
-          } else {
-            const lhs = document.createElement("span");
-            lhs.classList.add("lhs");
-            lhs.textContent = result.name;
-            const rhs = document.createElement("span");
-            rhs.classList.add("rhs");
-            rhs.textContent = `= ${result.display}`;
-            row.append(lhs, rhs);
-          }
-        } else if (result.kind === "conversion") {
-          if (useLatex) {
-            const latex = buildConversionLatex(result.expr, result.target, result.displayValue, this.plugin.settings.sigFigs);
-            appendLatex(row, latex);
-          } else {
-            const rhs = document.createElement("span");
-            rhs.classList.add("rhs");
-            rhs.textContent = `${result.expr} → ${result.target} = ${result.display}`;
-            row.appendChild(rhs);
-          }
+      if (entry.type === "comment") {
+        const comment = document.createElement("span");
+        comment.classList.add("calc-comment");
+        comment.textContent = entry.text ?? entry.line;
+        row.appendChild(comment);
+      } else if (entry.type === "assignment") {
+        if (useLatex && entry.displayValue !== undefined) {
+          const latex = buildAssignmentLatex(
+            entry.name ?? "",
+            entry.expr ?? "",
+            entry.displayValue,
+            this.plugin.settings.sigFigs,
+          );
+          appendLatex(row, latex);
         } else {
-          if (useLatex) {
-            const latex = buildExpressionLatex(result.expr, result.displayValue, this.plugin.settings.sigFigs);
-            appendLatex(row, latex);
-          } else {
-            const rhs = document.createElement("span");
-            rhs.classList.add("rhs");
-            rhs.textContent = result.display;
-            row.appendChild(rhs);
-          }
+          const lhs = document.createElement("span");
+          lhs.classList.add("lhs");
+          lhs.textContent = entry.name ?? "";
+          const rhs = document.createElement("span");
+          rhs.classList.add("rhs");
+          rhs.textContent = `= ${entry.display ?? ""}`;
+          row.append(lhs, rhs);
         }
-      } catch (error: any) {
+      } else if (entry.type === "convert") {
+        if (useLatex && entry.displayValue !== undefined) {
+          const latex = buildConversionLatex(
+            entry.expr ?? "",
+            entry.target ?? "",
+            entry.displayValue,
+            this.plugin.settings.sigFigs,
+          );
+          appendLatex(row, latex);
+        } else {
+          const rhs = document.createElement("span");
+          rhs.classList.add("rhs");
+          rhs.textContent = `${entry.expr ?? ""} → ${entry.target ?? ""} = ${entry.display ?? ""}`;
+          row.appendChild(rhs);
+        }
+      } else if (entry.type === "expression") {
+        if (useLatex && entry.displayValue !== undefined) {
+          const latex = buildExpressionLatex(
+            entry.expr ?? "",
+            entry.displayValue,
+            this.plugin.settings.sigFigs,
+          );
+          appendLatex(row, latex);
+        } else {
+          const rhs = document.createElement("span");
+          rhs.classList.add("rhs");
+          rhs.textContent = entry.display ?? "";
+          row.appendChild(rhs);
+        }
+      } else if (entry.type === "error") {
         row.classList.add("calc-error");
-        row.textContent = `Error: ${error?.message ?? String(error)}`;
+        row.textContent = `Error: ${entry.error ?? ""}`;
       }
+
       container.appendChild(row);
     }
 
@@ -168,6 +206,85 @@ export class CalcEngine {
 
     this.plugin.refreshVariablesView(scope);
     return span;
+  }
+
+  evaluateToEntries(source: string, filePath: string, options?: EvaluateOptions): { entries: EvaluatedLine[]; scope: NoteScope } {
+    const persist = options?.persist ?? true;
+    let workingScope: NoteScope;
+    if (persist) {
+      const shouldReset = options?.resetScope ?? false;
+      if (shouldReset) this.clearScope(filePath);
+      workingScope = this.getScope(filePath);
+    } else if (options?.scope) {
+      if (options.resetScope) options.scope.vars.clear();
+      workingScope = options.scope;
+    } else {
+      workingScope = { vars: new Map() };
+    }
+
+    const system = this.plugin.settings.defaultUnitSystem;
+    const entries: EvaluatedLine[] = [];
+    const lines = source.split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) {
+        entries.push({ raw, line: "", type: "blank" });
+        continue;
+      }
+
+      try {
+        const result = this.evaluateLine(line, workingScope, system, raw.trim());
+        if (result.kind === "comment") {
+          entries.push({ raw, line, type: "comment", text: result.text, plain: result.plain });
+        } else if (result.kind === "assignment") {
+          entries.push({
+            raw,
+            line,
+            type: "assignment",
+            name: result.name,
+            expr: result.expr,
+            value: result.value,
+            display: result.display,
+            displayValue: result.displayValue,
+            magnitude: result.magnitude,
+            unit: result.unit,
+            plain: result.plain,
+          });
+        } else if (result.kind === "conversion") {
+          entries.push({
+            raw,
+            line,
+            type: "convert",
+            expr: result.expr,
+            target: result.target,
+            value: result.value,
+            display: result.display,
+            displayValue: result.displayValue,
+            magnitude: result.magnitude,
+            unit: result.unit,
+            plain: result.plain,
+          });
+        } else if (result.kind === "expression") {
+          entries.push({
+            raw,
+            line,
+            type: "expression",
+            expr: result.expr,
+            value: result.value,
+            display: result.display,
+            displayValue: result.displayValue,
+            magnitude: result.magnitude,
+            unit: result.unit,
+            plain: result.plain,
+          });
+        }
+      } catch (error: any) {
+        const message = error?.message ?? String(error);
+        entries.push({ raw, line, type: "error", error: message, plain: line });
+      }
+    }
+
+    return { entries, scope: workingScope };
   }
 
   getGlobalVariables(): Map<string, GlobalVarEntry> {

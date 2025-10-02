@@ -5,10 +5,11 @@ import { CalcEngine } from "./calcEngine";
 import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
 import { UnitPickerModal } from "./unitPicker";
+import { PythonExporter } from "./exporter";
 
 export default class EngineeringToolkitPlugin extends Plugin {
   settings: ToolkitSettings;
-  private calc: CalcEngine;
+  calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
   private loadedGlobalVars: Record<string, GlobalVarEntry> = {};
@@ -47,12 +48,14 @@ export default class EngineeringToolkitPlugin extends Plugin {
       embedSuffix: "]]",
     },
   ];
+  private exporter!: PythonExporter;
 
   async onload() {
     console.log("Loading Engineering Toolkit");
     await this.loadSettings();
     this.calc = new CalcEngine(this);
     this.calc.loadGlobalVars(this.loadedGlobalVars);
+    this.exporter = new PythonExporter(this);
     this.refreshModelViewerAvailability(true);
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
@@ -62,6 +65,12 @@ export default class EngineeringToolkitPlugin extends Plugin {
       id: "open-variables-view",
       name: "Open Variables Panel",
       callback: async () => { await this.openVariablesView(); }
+    });
+
+    this.addCommand({
+      id: "export-calculations-python",
+      name: "Export calculations to Python",
+      callback: async () => { await this.exporter.exportActiveNoteOrSelection(); }
     });
 
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {
@@ -551,118 +560,6 @@ export default class EngineeringToolkitPlugin extends Plugin {
     });
   }
 
-  private async insertDiagramFlow(preselectedKey?: string) {
-    const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-    if (!editor) {
-      new Notice("Open a Markdown note before inserting a diagram placeholder.");
-      return;
-    }
-
-    const integration = preselectedKey
-      ? this.diagramIntegrations.find(d => d.key === preselectedKey)
-      : await this.selectDiagramIntegration();
-
-    if (!integration) return;
-
-    if (!this.isPluginAvailable(integration.pluginId)) {
-      new Notice(`${integration.name} requires the companion plugin (${integration.pluginId}) to be enabled.`);
-      return;
-    }
-
-    const baseName = await this.prompt(`Enter file name for the ${integration.name}:`);
-    if (!baseName) return;
-
-    const folderInput = await this.prompt(`Target folder (default: ${integration.defaultFolder}):`);
-    const targetFolder = folderInput?.trim() || integration.defaultFolder;
-
-    const templatePath = await this.prompt("Template path (optional, leave blank to use default placeholder):");
-    let filePath: string;
-    try {
-      filePath = await this.createDiagramFile(integration, baseName.trim(), targetFolder, templatePath?.trim() || null);
-    } catch (error: any) {
-      new Notice(error?.message || "Failed to prepare diagram file.");
-      return;
-    }
-
-    const embed = `${integration.embedPrefix || "![["}${filePath}${integration.embedSuffix || "]]"}`;
-    editor.replaceSelection(embed);
-  }
-
-  private async selectDiagramIntegration(): Promise<DiagramIntegration | null> {
-    if (this.diagramIntegrations.length === 1) return this.diagramIntegrations[0];
-    return new Promise(resolve => {
-      const modal = new (class extends SuggestModal<DiagramIntegration> {
-        private resolved = false;
-        constructor(private readonly plugin: EngineeringToolkitPlugin) {
-          super(plugin.app);
-        }
-        getSuggestions(query: string): DiagramIntegration[] {
-          const lower = query.toLowerCase();
-          return this.plugin.diagramIntegrations.filter(d =>
-            !query || d.name.toLowerCase().includes(lower) || d.key.toLowerCase().includes(lower)
-          );
-        }
-        renderSuggestion(value: DiagramIntegration, el: HTMLElement) {
-          el.createEl("div", { text: value.name });
-          if (value.description) {
-            el.createEl("small", { text: value.description });
-          }
-        }
-        onChooseSuggestion(item: DiagramIntegration) {
-          this.resolved = true;
-          resolve(item);
-        }
-        onClose() {
-          if (!this.resolved) resolve(null);
-        }
-      })(this);
-      modal.setPlaceholder("Select diagram type");
-      modal.open();
-    });
-  }
-
-  private isPluginAvailable(id: string): boolean {
-    const pluginsApi = (this.app as any).plugins;
-    if (!pluginsApi) return false;
-    if (pluginsApi.enabledPlugins instanceof Set) {
-      return pluginsApi.enabledPlugins.has(id);
-    }
-    return Boolean(pluginsApi.plugins?.[id]);
-  }
-
-  private async createDiagramFile(
-    integration: DiagramIntegration,
-    baseName: string,
-    targetFolder: string,
-    templatePath: string | null
-  ): Promise<string> {
-    const vault = this.app.vault;
-    const folder = normalizePath(targetFolder || ".");
-    if (folder !== "." && !vault.getAbstractFileByPath(folder)) {
-      await vault.createFolder(folder).catch(() => {});
-    }
-
-    const extension = integration.fileExtension.startsWith(".") ? integration.fileExtension : `.${integration.fileExtension}`;
-    const sanitizedName = baseName.replace(/[\\/:*?"<>|]/g, "-");
-    const path = normalizePath(folder === "." ? `${sanitizedName}${extension}` : `${folder}/${sanitizedName}${extension}`);
-
-    if (vault.getAbstractFileByPath(path)) {
-      throw new Error("A diagram with that name already exists.");
-    }
-
-    let contents = integration.defaultFrontmatter ?? "";
-    if (templatePath) {
-      const normalizedTemplate = normalizePath(templatePath);
-      const templateFile = vault.getAbstractFileByPath(normalizedTemplate);
-      if (!(templateFile instanceof TFile)) {
-        throw new Error("Template file was not found.");
-      }
-      contents = await vault.read(templateFile);
-    }
-
-    await vault.create(path, contents);
-    return path;
-  }
 }
 
 interface DiagramIntegration {
