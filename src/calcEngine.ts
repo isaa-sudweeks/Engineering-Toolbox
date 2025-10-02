@@ -3,6 +3,12 @@ import { math, formatUnit, formatUnitLatex, escapeLatex } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
+type LineResult =
+  | { kind: "comment"; text: string; plain: string }
+  | { kind: "assignment"; name: string; expr: string; value: any; display: string; plain: string }
+  | { kind: "conversion"; expr: string; target: string; value: any; display: string; plain: string }
+  | { kind: "expression"; expr: string; value: any; display: string; plain: string };
+
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
@@ -32,58 +38,58 @@ export class CalcEngine {
       const row = document.createElement("div");
       row.classList.add("calc-line");
       try {
-        if (line.startsWith("//") || line.startsWith("#")) {
+        const result = this.evaluateLine(line, scope);
+        row.dataset.plain = result.plain;
+        if (result.kind === "comment") {
           const comment = document.createElement("span");
           comment.classList.add("calc-comment");
-          comment.textContent = line;
+          comment.textContent = result.text;
           row.appendChild(comment);
-          row.dataset.plain = line;
-        } else if (isAssignment(line)) {
-          const { name, expr } = splitAssignment(line);
-          const value = this.evalExpression(expr, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          scope.vars.set(name, { value, display });
-          row.dataset.plain = `${name} = ${display}`;
+        } else if (result.kind === "assignment") {
           if (useLatex) {
-            const latex = buildAssignmentLatex(name, expr, value, this.plugin.settings.sigFigs);
+            const latex = buildAssignmentLatex(
+              result.name,
+              result.expr,
+              result.value,
+              this.plugin.settings.sigFigs,
+            );
             appendLatex(row, latex);
           } else {
             const lhs = document.createElement("span");
             lhs.classList.add("lhs");
-            lhs.textContent = name;
-            row.appendChild(lhs);
+            lhs.textContent = result.name;
             const rhs = document.createElement("span");
             rhs.classList.add("rhs");
-            rhs.textContent = `= ${display}`;
-            row.appendChild(rhs);
+            rhs.textContent = `= ${result.display}`;
+            row.append(lhs, rhs);
           }
-        } else if (isConvert(line)) {
-          const { expr, target } = splitConvert(line);
-          const v = this.evalExpression(expr, scope);
-          let converted = v;
-          if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-          const display = formatUnit(converted, this.plugin.settings.sigFigs);
-          row.dataset.plain = `${expr} → ${target} = ${display}`;
+        } else if (result.kind === "conversion") {
           if (useLatex) {
-            const latex = buildConversionLatex(expr, target, converted, this.plugin.settings.sigFigs);
+            const latex = buildConversionLatex(
+              result.expr,
+              result.target,
+              result.value,
+              this.plugin.settings.sigFigs,
+            );
             appendLatex(row, latex);
           } else {
             const rhs = document.createElement("span");
             rhs.classList.add("rhs");
-            rhs.textContent = `${expr} → ${target} = ${display}`;
+            rhs.textContent = `${result.expr} → ${result.target} = ${result.display}`;
             row.appendChild(rhs);
           }
         } else {
-          const value = this.evalExpression(line, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          row.dataset.plain = `${line} = ${display}`;
           if (useLatex) {
-            const latex = buildExpressionLatex(line, value, this.plugin.settings.sigFigs);
+            const latex = buildExpressionLatex(
+              result.expr,
+              result.value,
+              this.plugin.settings.sigFigs,
+            );
             appendLatex(row, latex);
           } else {
             const rhs = document.createElement("span");
             rhs.classList.add("rhs");
-            rhs.textContent = display;
+            rhs.textContent = result.display;
             row.appendChild(rhs);
           }
         }
@@ -97,6 +103,48 @@ export class CalcEngine {
     return container;
   }
 
+  async evaluateInline(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
+    const span = document.createElement("span");
+    span.classList.add("calc-inline");
+
+    const statement = source.trim();
+    if (!statement) return span;
+
+    const filePath = ctx.sourcePath || "untitled";
+    const scope = this.getScope(filePath);
+
+    try {
+      const result = this.evaluateLine(statement, scope);
+      if (result.kind === "assignment") {
+        const lhs = document.createElement("span");
+        lhs.classList.add("lhs");
+        lhs.textContent = result.name;
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.append(lhs, rhs);
+      } else if (result.kind === "conversion") {
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.appendChild(rhs);
+      } else if (result.kind === "expression") {
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.appendChild(rhs);
+      } else {
+        span.textContent = statement;
+      }
+    } catch (e: any) {
+      span.classList.add("calc-inline-error");
+      span.textContent = `Error: ${e?.message ?? String(e)}`;
+    }
+
+    this.plugin.refreshVariablesView(scope);
+    return span;
+  }
+
   private evalExpression(expr: string, scope: NoteScope): any {
     const mscope: Record<string, any> = {};
     if (this.plugin.settings.globalVarsEnabled) {
@@ -104,6 +152,37 @@ export class CalcEngine {
     }
     for (const [k, v] of scope.vars.entries()) mscope[k] = v.value;
     return math.evaluate(expr, mscope);
+  }
+
+  private evaluateLine(line: string, scope: NoteScope): LineResult {
+    if (line.startsWith("//") || line.startsWith("#")) {
+      return { kind: "comment", text: line, plain: line };
+    }
+    if (isAssignment(line)) {
+      const { name, expr } = splitAssignment(line);
+      const value = this.evalExpression(expr, scope);
+      const display = formatUnit(value, this.plugin.settings.sigFigs);
+      scope.vars.set(name, { value, display });
+      return { kind: "assignment", name, expr, value, display, plain: `${name} = ${display}` };
+    }
+    if (isConvert(line)) {
+      const { expr, target } = splitConvert(line);
+      const v = this.evalExpression(expr, scope);
+      let converted = v;
+      if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
+      const display = formatUnit(converted, this.plugin.settings.sigFigs);
+      return {
+        kind: "conversion",
+        expr,
+        target,
+        value: converted,
+        display,
+        plain: `${expr} → ${target} = ${display}`,
+      };
+    }
+    const value = this.evalExpression(line, scope);
+    const display = formatUnit(value, this.plugin.settings.sigFigs);
+    return { kind: "expression", expr: line, value, display, plain: `${line} = ${display}` };
   }
 }
 
