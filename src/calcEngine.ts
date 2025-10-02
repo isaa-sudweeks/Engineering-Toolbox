@@ -15,13 +15,13 @@ export class CalcEngine {
     return this.scopes.get(filePath)!;
   }
   clearScope(filePath: string) { this.scopes.delete(filePath); }
+  clearAllScopes() { this.scopes.clear(); }
 
   async evaluateBlock(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
     const container = document.createElement("div");
     container.classList.add("calc-output");
 
     const filePath = ctx.sourcePath || "untitled";
-    if (!this.plugin.settings.autoRecalc) this.clearScope(filePath);
     const scope = this.getScope(filePath);
 
     const lines = source.split(/\r?\n/);

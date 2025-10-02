@@ -29,11 +29,16 @@ Open the **Variables Panel** via Command Palette to view current note's variable
 ## Commands
 - **Open Variables Panel**
 - **Recalculate current note**
+- **Reset current note scope**
 - **New Experiment Note** (creates a scaffolded lab note under configured folder)
 
 ## Settings
-- Auto recalc
+- Auto recalc (disable for manual mode; existing variables persist until you reset the scope)
 - Default unit system (display preference)
 - Significant figures
 - Lab notes folder
 - Global variables (experimental)
+
+### Manual mode
+When **Auto recalc** is turned off, the plugin leaves previously calculated variables in place so you can selectively re-run calculations without losing context.
+Use the **Reset current note scope** command whenever you want to clear the stored variables for a note and start fresh.
