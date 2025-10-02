@@ -1,0 +1,9 @@
+.calc-output { font-family: var(--font-text); line-height: 1.6; }
+.calc-line { display: flex; gap: .5rem; align-items: baseline; }
+.calc-line .lhs { font-weight: 600; }
+.calc-line .rhs { font-variant-numeric: tabular-nums; }
+.calc-error { color: var(--color-red); }
+.variables-panel { padding: 12px; }
+.variables-panel .var-item { display: flex; gap: .5rem; margin: 4px 0; }
+.variables-panel .var-name { font-weight: 600; }
+.variables-panel .var-edit { margin-left: auto; }

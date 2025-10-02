@@ -1,0 +1,10 @@
+{
+  "id": "engineering-toolkit",
+  "name": "Engineering Toolkit",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Inline calculations with units, variable tracking, unit conversions, and lab journal helpers for engineering students.",
+  "author": "Your Name",
+  "authorUrl": "https://example.com",
+  "isDesktopOnly": false
+}
