@@ -1,4 +1,5 @@
 import { MarkdownPostProcessorContext } from "obsidian";
+<<<<<<< HEAD
 import {
   math,
   formatUnitLatex,
@@ -7,7 +8,11 @@ import {
   formatValueParts,
 } from "./utils/format";
 import type { UnitSystem } from "./utils/format";
-import type { NoteScope, VarEntry } from "./utils/types";
+import type { NoteScope, VarEntry, GlobalVarEntry } from "./utils/types";
+=======
+import { math, formatUnit } from "./utils/format";
+import type { GlobalVarEntry, NoteScope, VarEntry } from "./utils/types";
+>>>>>>> origin/codex/add-api-for-managing-global-constants
 import type EngineeringToolkitPlugin from "./main";
 
 type LineResult =
@@ -48,7 +53,7 @@ type LineResult =
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
-  private globalVars = new Map<string, VarEntry>();
+  private globalVars = new Map<string, GlobalVarEntry>();
 
   constructor(plugin: EngineeringToolkitPlugin) { this.plugin = plugin; }
 
@@ -187,6 +192,82 @@ export class CalcEngine {
     return this.globalVars;
   }
 
+  loadGlobalVars(entries: Record<string, GlobalVarEntry> = {}) {
+    this.globalVars.clear();
+    const system = this.plugin.settings.defaultUnitSystem;
+    for (const [name, persisted] of Object.entries(entries)) {
+      if (!persisted) continue;
+      const source = persisted.source ?? "";
+      let value = persisted.value;
+      let formatted = this.formatForDisplay(value, system);
+      if (source) {
+        try {
+          const ctx = this.buildGlobalEvalScope(name);
+          value = math.evaluate(source, ctx);
+          formatted = this.formatForDisplay(value, system);
+        } catch {
+          // fall back to persisted fields when evaluation fails
+          formatted = {
+            display: persisted.display ?? formatted.display,
+            magnitude: (persisted as any).magnitude ?? formatted.magnitude,
+            unit: (persisted as any).unit ?? formatted.unit,
+          };
+        }
+      }
+      this.globalVars.set(name, {
+        value,
+        display: formatted.display,
+        magnitude: formatted.magnitude,
+        unit: formatted.unit,
+        source,
+      });
+    }
+  }
+
+  getGlobalVarsSnapshot(): Array<[string, GlobalVarEntry]> {
+    return Array.from(this.globalVars.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, entry]) => [name, this.toGlobalEntry(entry)] as [string, GlobalVarEntry]);
+  }
+
+  serializeGlobalVars(): Record<string, GlobalVarEntry> {
+    const out: Record<string, GlobalVarEntry> = {};
+    for (const [name, entry] of this.globalVars.entries()) {
+      out[name] = this.toGlobalEntry(entry);
+    }
+    return out;
+  }
+
+  async upsertGlobalVar(name: string, source: string): Promise<GlobalVarEntry> {
+    const trimmedName = name.trim();
+    const trimmedSource = source.trim();
+    if (!trimmedName) throw new Error("Name is required");
+    if (!this.isValidIdentifier(trimmedName)) throw new Error("Invalid variable name");
+    if (!trimmedSource) throw new Error("Expression is required");
+
+    const context = this.buildGlobalEvalScope(trimmedName);
+    const value = math.evaluate(trimmedSource, context);
+    const system = this.plugin.settings.defaultUnitSystem;
+    const formatted = this.formatForDisplay(value, system);
+    const entry: VarEntry = {
+      value,
+      display: formatted.display,
+      magnitude: formatted.magnitude,
+      unit: formatted.unit,
+      source: trimmedSource,
+    };
+    this.globalVars.set(trimmedName, entry);
+    await this.plugin.saveToolkitData();
+    return this.toGlobalEntry(entry);
+  }
+
+  async deleteGlobalVar(name: string): Promise<void> {
+    const trimmedName = name.trim();
+    if (!this.globalVars.has(trimmedName)) return;
+    this.globalVars.delete(trimmedName);
+    await this.plugin.saveToolkitData();
+  }
+
   private evalExpression(expr: string, scope: NoteScope): any {
     const mscope: Record<string, any> = {};
     if (this.plugin.settings.globalVarsEnabled) {
@@ -196,6 +277,7 @@ export class CalcEngine {
     return math.evaluate(expr, mscope);
   }
 
+<<<<<<< HEAD
   private evaluateLine(line: string, scope: NoteScope, system: UnitSystem, sourceLine?: string): LineResult {
     if (line.startsWith("//") || line.startsWith("#")) {
       return { kind: "comment", text: line, plain: line };
@@ -270,6 +352,106 @@ export class CalcEngine {
       unit: formatted.unit,
       plain: `${line} = ${formatted.display}`,
     };
+=======
+  loadGlobalVars(entries: Record<string, GlobalVarEntry> = {}) {
+    this.globalVars.clear();
+    for (const [name, entry] of Object.entries(entries)) {
+      if (!entry || typeof entry !== "object") continue;
+      const source = entry.source ?? "";
+      let value = entry.value;
+      let display = entry.display ?? "";
+      if (source) {
+        try {
+          const ctx = this.buildGlobalEvalScope(name);
+          value = math.evaluate(source, ctx);
+          display = formatUnit(value, this.plugin.settings.sigFigs);
+        } catch (e) {
+          // fall back to persisted value/display if evaluation fails
+        }
+      }
+      if (!display && value !== undefined) {
+        try { display = formatUnit(value, this.plugin.settings.sigFigs); } catch (e) {}
+      }
+      this.globalVars.set(name, { value, display, source });
+    }
+  }
+
+  private formatForDisplay(value: any, system: UnitSystem) {
+    const displayValue = normalizeUnitToSystem(value, system);
+    const formatted = formatValueParts(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
+    return formatted;
+  }
+
+  private buildGlobalEvalScope(skip?: string): Record<string, any> {
+    const scope: Record<string, any> = {};
+    for (const [k, v] of this.globalVars.entries()) {
+      if (skip && k === skip) continue;
+      scope[k] = v.value;
+    }
+    return scope;
+  }
+
+  private toGlobalEntry(entry: VarEntry): GlobalVarEntry {
+    return {
+      value: entry.value,
+      display: entry.display,
+      magnitude: entry.magnitude,
+      unit: entry.unit,
+      source: entry.source ?? "",
+    };
+  }
+
+  private isValidIdentifier(name: string) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+  }
+
+  getGlobalVarsSnapshot(): Array<[string, GlobalVarEntry]> {
+    return Array.from(this.globalVars.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  serializeGlobalVars(): Record<string, GlobalVarEntry> {
+    const out: Record<string, GlobalVarEntry> = {};
+    for (const [name, entry] of this.globalVars.entries()) {
+      out[name] = { ...entry, source: entry.source ?? "" };
+    }
+    return out;
+  }
+
+  async upsertGlobalVar(name: string, source: string): Promise<GlobalVarEntry> {
+    const trimmedName = name.trim();
+    const trimmedSource = source.trim();
+    if (!trimmedName) throw new Error("Name is required");
+    if (!this.isValidIdentifier(trimmedName)) throw new Error("Invalid variable name");
+    if (!trimmedSource) throw new Error("Expression is required");
+
+    const context = this.buildGlobalEvalScope(trimmedName);
+    const value = math.evaluate(trimmedSource, context);
+    const display = formatUnit(value, this.plugin.settings.sigFigs);
+    const entry: GlobalVarEntry = { value, display, source: trimmedSource };
+    this.globalVars.set(trimmedName, entry);
+    await this.plugin.saveToolkitData();
+    return entry;
+  }
+
+  async deleteGlobalVar(name: string): Promise<void> {
+    const trimmedName = name.trim();
+    if (!this.globalVars.has(trimmedName)) return;
+    this.globalVars.delete(trimmedName);
+    await this.plugin.saveToolkitData();
+  }
+
+  private buildGlobalEvalScope(skip?: string): Record<string, any> {
+    const scope: Record<string, any> = {};
+    for (const [k, v] of this.globalVars.entries()) {
+      if (skip && k === skip) continue;
+      scope[k] = v.value;
+    }
+    return scope;
+  }
+
+  private isValidIdentifier(name: string) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+>>>>>>> origin/codex/add-api-for-managing-global-constants
   }
 }
 

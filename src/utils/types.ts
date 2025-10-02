@@ -7,10 +7,15 @@ export interface VarEntry {
   unit: string;
   display: string;
   sourceLine?: string;
+  source?: string;
 }
 
 export interface NoteScope {
   vars: Map<VarName, VarEntry>;
+}
+
+export interface GlobalVarEntry extends VarEntry {
+  source: string;
 }
 
 export interface ToolkitSettings {
@@ -20,4 +25,9 @@ export interface ToolkitSettings {
   labNotesFolder: string;
   globalVarsEnabled: boolean;
   latexFormatting: boolean;
+}
+
+export interface ToolkitData {
+  settings: ToolkitSettings;
+  globalVars: Record<VarName, GlobalVarEntry>;
 }

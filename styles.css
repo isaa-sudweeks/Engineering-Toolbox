@@ -40,3 +40,12 @@
 .unit-picker-label { font-weight: 600; }
 .unit-picker-unit-select { min-width: 160px; }
 .unit-picker-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+.global-vars-section { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+.global-var-row { display: grid; gap: 0.5rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1.2fr) auto auto; align-items: center; padding: 4px 6px; border-radius: 6px; background-color: var(--background-secondary-alt); }
+.global-var-row.add { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; }
+.global-var-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-var-display { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.global-var-input { width: 100%; }
+.global-var-row button { height: 100%; }
+.global-var-add { justify-self: flex-start; }
