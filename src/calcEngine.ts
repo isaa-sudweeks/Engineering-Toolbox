@@ -1,5 +1,5 @@
 import { MarkdownPostProcessorContext } from "obsidian";
-import { math, formatUnit } from "./utils/format";
+import { math, formatUnit, formatValueParts } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
@@ -36,9 +36,9 @@ export class CalcEngine {
         } else if (isAssignment(line)) {
           const { name, expr } = splitAssignment(line);
           const value = this.evalExpression(expr, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          scope.vars.set(name, { value, display });
-          row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${display}</span>`;
+          const formatted = formatValueParts(value, this.plugin.settings.sigFigs);
+          scope.vars.set(name, { value, ...formatted, sourceLine: raw.trim() });
+          row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${formatted.display}</span>`;
         } else if (isConvert(line)) {
           const { expr, target } = splitConvert(line);
           const v = this.evalExpression(expr, scope);
@@ -59,6 +59,10 @@ export class CalcEngine {
     }
     this.plugin.refreshVariablesView(scope);
     return container;
+  }
+
+  getGlobalVariables(): Map<string, VarEntry> {
+    return this.globalVars;
   }
 
   private evalExpression(expr: string, scope: NoteScope): any {

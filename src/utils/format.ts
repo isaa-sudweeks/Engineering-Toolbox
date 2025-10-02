@@ -1,19 +1,45 @@
 import { create, all, Unit } from "mathjs";
 const math = create(all, {});
 
-export function formatUnit(u: any, precision = 4): string {
+export interface FormattedValueParts {
+  magnitude: string;
+  unit: string;
+  display: string;
+}
+
+export function formatValueParts(value: any, precision = 4): FormattedValueParts {
   try {
-    if (typeof u === "number") return trimZeros(u.toFixed(precision));
-    if ((u as Unit)?.toNumber) {
-      const unitName = (u as Unit).formatUnits();
-      const val = (u as Unit).toNumber(unitName);
-      return `${trimZeros(val.toFixed(precision))} ${unitName}`.trim();
+    if (typeof value === "number") {
+      const magnitude = trimZeros(value.toFixed(precision));
+      return { magnitude, unit: "", display: magnitude };
     }
-    if (u?.format) return u.format({ notation: "fixed", precision });
-    return String(u);
+    if ((value as Unit)?.toNumber) {
+      const unitObj = value as Unit;
+      const unitName = unitObj.formatUnits();
+      let magnitudeValue: number;
+      if (unitName) {
+        magnitudeValue = unitObj.toNumber(unitName);
+      } else {
+        magnitudeValue = unitObj.toNumber();
+      }
+      const magnitude = trimZeros(magnitudeValue.toFixed(precision));
+      const display = unitName ? `${magnitude} ${unitName}` : magnitude;
+      return { magnitude, unit: unitName, display };
+    }
+    if (value?.format) {
+      const display = value.format({ notation: "fixed", precision });
+      return { magnitude: display, unit: "", display };
+    }
+    const display = String(value);
+    return { magnitude: display, unit: "", display };
   } catch {
-    return String(u);
+    const display = String(value);
+    return { magnitude: display, unit: "", display };
   }
+}
+
+export function formatUnit(u: any, precision = 4): string {
+  return formatValueParts(u, precision).display;
 }
 
 export function trimZeros(x: string): string {
