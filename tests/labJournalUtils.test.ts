@@ -25,43 +25,81 @@ const sampleContext = (overrides: Partial<LabNoteTemplateContext> = {}): LabNote
 });
 
 describe("labJournalUtils", () => {
-  it("sanitizes titles and produces consistent filenames", () => {
-    const title = 'Voltage drop "analysis": AC/DC?';
-    const dateStr = "2024-09-14";
-    const safeTitle = sanitizeLabNoteTitle(title);
-    const fileName = getLabNoteFileName(dateStr, safeTitle);
+  describe("sanitizeLabNoteTitle", () => {
+    it("removes invalid characters, trims whitespace, and collapses gaps", () => {
+      const title = '  Voltage   drop  "analysis" : AC/DC?  ';
+      const safeTitle = sanitizeLabNoteTitle(title);
 
-    assert.equal(safeTitle, "Voltage drop -analysis- AC-DC");
-    assert.equal(fileName, "2024-09-14 Voltage drop -analysis- AC-DC.md");
-    assert.ok(!fileName.endsWith('"'), "filename should not contain stray quotes");
+      assert.equal(safeTitle, "Voltage drop -analysis- - AC-DC");
+    });
+
+    it("collapses consecutive separators", () => {
+      const safeTitle = sanitizeLabNoteTitle("---experimental   /// setup---");
+
+      assert.equal(safeTitle, "experimental - setup");
+    });
+
+    it("falls back to a default title when the sanitized value is empty", () => {
+      const safeTitle = sanitizeLabNoteTitle("/////");
+      assert.equal(safeTitle, "Untitled");
+    });
   });
 
-  it("falls back to a default title when the sanitized value is empty", () => {
-    const safeTitle = sanitizeLabNoteTitle("/////");
-    assert.equal(safeTitle, "Untitled");
+  describe("getLabNoteFileName", () => {
+    it("produces a Markdown filename using the date and sanitized title", () => {
+      const dateStr = "2024-09-14";
+      const safeTitle = sanitizeLabNoteTitle('Voltage drop "analysis": AC/DC?');
+      const fileName = getLabNoteFileName(dateStr, safeTitle);
+
+      assert.equal(fileName, "2024-09-14 Voltage drop -analysis- AC-DC.md");
+      assert.ok(!fileName.endsWith('"'), "filename should not contain stray quotes");
+    });
   });
 
-  it("normalizes folder paths and builds note paths", () => {
-    const folder = normalizeLabNotesFolder("Lab Journal///");
-    const path = getLabNotePath(folder, "2024-09-14 Untitled.md");
+  describe("normalizeLabNotesFolder", () => {
+    it("trims trailing slashes and converts backslashes", () => {
+      const folder = normalizeLabNotesFolder("\\\\Projects\\\\Lab Journal///");
 
-    assert.equal(folder, "Lab Journal");
-    assert.equal(path, "Lab Journal/2024-09-14 Untitled.md");
+      assert.equal(folder, "/Projects/Lab Journal");
+    });
+
+    it("uses a default folder when an empty value is provided", () => {
+      const folder = normalizeLabNotesFolder("   ");
+
+      assert.equal(folder, "Lab Journal");
+    });
   });
 
-  it("embeds substitution variables inside the note content", () => {
-    const context = sampleContext();
-    const content = buildLabNoteContent("Experiment: {{title}} on {{date}} ({{experiment_id}})", context);
+  describe("getLabNotePath", () => {
+    it("joins the folder and filename with a slash", () => {
+      const path = getLabNotePath("Lab Journal", "2024-09-14 Voltage drop analysis.md");
 
-    assert.match(content, /Experiment: Voltage drop analysis on 2024-09-14/);
-    assert.match(content, /2024-09-14-Voltage-drop-analysis/);
+      assert.equal(path, "Lab Journal/2024-09-14 Voltage drop analysis.md");
+    });
   });
 
-  it("falls back to the default template when the provided template is empty", () => {
-    const context = sampleContext();
-    const content = buildLabNoteContent("", context);
+  describe("buildLabNoteContent", () => {
+    it("embeds substitution variables inside the note content", () => {
+      const context = sampleContext();
+      const content = buildLabNoteContent("Experiment: {{title}} on {{date}} ({{experiment_id}})", context);
 
-    assert.match(content, /experiment_id: 2024-09-14-Voltage-drop-analysis/);
-    assert.match(content, /# Voltage drop analysis/);
+      assert.match(content, /Experiment: Voltage drop analysis on 2024-09-14/);
+      assert.match(content, /2024-09-14-Voltage-drop-analysis/);
+    });
+
+    it("replaces unknown variables with empty strings", () => {
+      const context = sampleContext();
+      const content = buildLabNoteContent("Unknown: '{{missing}}'", context);
+
+      assert.equal(content, "Unknown: ''");
+    });
+
+    it("falls back to the default template when the provided template is empty", () => {
+      const context = sampleContext();
+      const content = buildLabNoteContent("", context);
+
+      assert.match(content, /experiment_id: 2024-09-14-Voltage-drop-analysis/);
+      assert.match(content, /# Voltage drop analysis/);
+    });
   });
 });
