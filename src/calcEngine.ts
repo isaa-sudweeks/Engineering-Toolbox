@@ -1,5 +1,5 @@
 import { MarkdownPostProcessorContext } from "obsidian";
-import { math, formatUnit } from "./utils/format";
+import { math, formatUnit, normalizeUnitToSystem } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
@@ -24,6 +24,7 @@ export class CalcEngine {
     if (!this.plugin.settings.autoRecalc) this.clearScope(filePath);
     const scope = this.getScope(filePath);
 
+    const system = this.plugin.settings.defaultUnitSystem;
     const lines = source.split(/\r?\n/);
     for (const raw of lines) {
       const line = raw.trim();
@@ -36,7 +37,8 @@ export class CalcEngine {
         } else if (isAssignment(line)) {
           const { name, expr } = splitAssignment(line);
           const value = this.evalExpression(expr, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
+          const displayValue = normalizeUnitToSystem(value, system);
+          const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
           scope.vars.set(name, { value, display });
           row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${display}</span>`;
         } else if (isConvert(line)) {
@@ -44,11 +46,12 @@ export class CalcEngine {
           const v = this.evalExpression(expr, scope);
           let converted = v;
           if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-          const display = formatUnit(converted, this.plugin.settings.sigFigs);
+          const display = formatUnit(converted, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
           row.innerHTML = `<span class="rhs">${escapeHtml(expr)} → ${escapeHtml(target)} = ${display}</span>`;
         } else {
           const value = this.evalExpression(line, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
+          const displayValue = normalizeUnitToSystem(value, system);
+          const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
           row.innerHTML = `<span class="rhs">${display}</span>`;
         }
       } catch (e: any) {
