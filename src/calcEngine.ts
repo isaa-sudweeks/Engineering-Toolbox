@@ -1,18 +1,13 @@
 import { MarkdownPostProcessorContext } from "obsidian";
-<<<<<<< HEAD
 import {
   math,
   formatUnitLatex,
   escapeLatex,
   normalizeUnitToSystem,
   formatValueParts,
+  UnitSystem,
 } from "./utils/format";
-import type { UnitSystem } from "./utils/format";
 import type { NoteScope, VarEntry, GlobalVarEntry } from "./utils/types";
-=======
-import { math, formatUnit } from "./utils/format";
-import type { GlobalVarEntry, NoteScope, VarEntry } from "./utils/types";
->>>>>>> origin/codex/add-api-for-managing-global-constants
 import type EngineeringToolkitPlugin from "./main";
 
 type LineResult =
@@ -55,12 +50,15 @@ export class CalcEngine {
   private scopes = new Map<string, NoteScope>();
   private globalVars = new Map<string, GlobalVarEntry>();
 
-  constructor(plugin: EngineeringToolkitPlugin) { this.plugin = plugin; }
+  constructor(plugin: EngineeringToolkitPlugin) {
+    this.plugin = plugin;
+  }
 
   getScope(filePath: string): NoteScope {
     if (!this.scopes.has(filePath)) this.scopes.set(filePath, { vars: new Map() });
     return this.scopes.get(filePath)!;
   }
+
   clearScope(filePath: string) { this.scopes.delete(filePath); }
 
   async evaluateBlock(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
@@ -77,11 +75,13 @@ export class CalcEngine {
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
+
       const row = document.createElement("div");
       row.classList.add("calc-line");
       try {
         const result = this.evaluateLine(line, scope, system, raw.trim());
         row.dataset.plain = result.plain;
+
         if (result.kind === "comment") {
           const comment = document.createElement("span");
           comment.classList.add("calc-comment");
@@ -89,12 +89,7 @@ export class CalcEngine {
           row.appendChild(comment);
         } else if (result.kind === "assignment") {
           if (useLatex) {
-            const latex = buildAssignmentLatex(
-              result.name,
-              result.expr,
-              result.displayValue,
-              this.plugin.settings.sigFigs,
-            );
+            const latex = buildAssignmentLatex(result.name, result.expr, result.displayValue, this.plugin.settings.sigFigs);
             appendLatex(row, latex);
           } else {
             const lhs = document.createElement("span");
@@ -107,12 +102,7 @@ export class CalcEngine {
           }
         } else if (result.kind === "conversion") {
           if (useLatex) {
-            const latex = buildConversionLatex(
-              result.expr,
-              result.target,
-              result.displayValue,
-              this.plugin.settings.sigFigs,
-            );
+            const latex = buildConversionLatex(result.expr, result.target, result.displayValue, this.plugin.settings.sigFigs);
             appendLatex(row, latex);
           } else {
             const rhs = document.createElement("span");
@@ -122,11 +112,7 @@ export class CalcEngine {
           }
         } else {
           if (useLatex) {
-            const latex = buildExpressionLatex(
-              result.expr,
-              result.displayValue,
-              this.plugin.settings.sigFigs,
-            );
+            const latex = buildExpressionLatex(result.expr, result.displayValue, this.plugin.settings.sigFigs);
             appendLatex(row, latex);
           } else {
             const rhs = document.createElement("span");
@@ -135,12 +121,13 @@ export class CalcEngine {
             row.appendChild(rhs);
           }
         }
-      } catch (e: any) {
+      } catch (error: any) {
         row.classList.add("calc-error");
-        row.textContent = `Error: ${e?.message ?? String(e)}`;
+        row.textContent = `Error: ${error?.message ?? String(error)}`;
       }
       container.appendChild(row);
     }
+
     this.plugin.refreshVariablesView(scope);
     return container;
   }
@@ -166,12 +153,7 @@ export class CalcEngine {
         rhs.classList.add("rhs");
         rhs.textContent = `= ${result.display}`;
         span.append(lhs, rhs);
-      } else if (result.kind === "conversion") {
-        const rhs = document.createElement("span");
-        rhs.classList.add("rhs");
-        rhs.textContent = `= ${result.display}`;
-        span.appendChild(rhs);
-      } else if (result.kind === "expression") {
+      } else if (result.kind === "conversion" || result.kind === "expression") {
         const rhs = document.createElement("span");
         rhs.classList.add("rhs");
         rhs.textContent = `= ${result.display}`;
@@ -179,38 +161,37 @@ export class CalcEngine {
       } else {
         span.textContent = statement;
       }
-    } catch (e: any) {
+    } catch (error: any) {
       span.classList.add("calc-inline-error");
-      span.textContent = `Error: ${e?.message ?? String(e)}`;
+      span.textContent = `Error: ${error?.message ?? String(error)}`;
     }
 
     this.plugin.refreshVariablesView(scope);
     return span;
   }
 
-  getGlobalVariables(): Map<string, VarEntry> {
+  getGlobalVariables(): Map<string, GlobalVarEntry> {
     return this.globalVars;
   }
 
   loadGlobalVars(entries: Record<string, GlobalVarEntry> = {}) {
     this.globalVars.clear();
     const system = this.plugin.settings.defaultUnitSystem;
-    for (const [name, persisted] of Object.entries(entries)) {
-      if (!persisted) continue;
-      const source = persisted.source ?? "";
-      let value = persisted.value;
+    for (const [name, entry] of Object.entries(entries)) {
+      if (!entry) continue;
+      const source = entry.source ?? "";
+      let value = entry.value;
       let formatted = this.formatForDisplay(value, system);
       if (source) {
         try {
-          const ctx = this.buildGlobalEvalScope(name);
-          value = math.evaluate(source, ctx);
+          const scope = this.buildGlobalEvalScope(name);
+          value = math.evaluate(source, scope);
           formatted = this.formatForDisplay(value, system);
         } catch {
-          // fall back to persisted fields when evaluation fails
           formatted = {
-            display: persisted.display ?? formatted.display,
-            magnitude: (persisted as any).magnitude ?? formatted.magnitude,
-            unit: (persisted as any).unit ?? formatted.unit,
+            display: entry.display ?? formatted.display,
+            magnitude: entry.magnitude ?? formatted.magnitude,
+            unit: entry.unit ?? formatted.unit,
           };
         }
       }
@@ -249,7 +230,8 @@ export class CalcEngine {
     const value = math.evaluate(trimmedSource, context);
     const system = this.plugin.settings.defaultUnitSystem;
     const formatted = this.formatForDisplay(value, system);
-    const entry: VarEntry = {
+
+    const entry: GlobalVarEntry = {
       value,
       display: formatted.display,
       magnitude: formatted.magnitude,
@@ -258,7 +240,7 @@ export class CalcEngine {
     };
     this.globalVars.set(trimmedName, entry);
     await this.plugin.saveToolkitData();
-    return this.toGlobalEntry(entry);
+    return entry;
   }
 
   async deleteGlobalVar(name: string): Promise<void> {
@@ -269,34 +251,28 @@ export class CalcEngine {
   }
 
   private evalExpression(expr: string, scope: NoteScope): any {
-    const mscope: Record<string, any> = {};
+    const evaluationScope: Record<string, any> = {};
     if (this.plugin.settings.globalVarsEnabled) {
-      for (const [k, v] of this.globalVars.entries()) mscope[k] = v.value;
+      for (const [k, v] of this.globalVars.entries()) evaluationScope[k] = v.value;
     }
-    for (const [k, v] of scope.vars.entries()) mscope[k] = v.value;
-    return math.evaluate(expr, mscope);
+    for (const [k, v] of scope.vars.entries()) evaluationScope[k] = v.value;
+    return math.evaluate(expr, evaluationScope);
   }
 
-<<<<<<< HEAD
   private evaluateLine(line: string, scope: NoteScope, system: UnitSystem, sourceLine?: string): LineResult {
     if (line.startsWith("//") || line.startsWith("#")) {
       return { kind: "comment", text: line, plain: line };
     }
+
     if (isAssignment(line)) {
       const { name, expr } = splitAssignment(line);
       const value = this.evalExpression(expr, scope);
-      const displayValue = normalizeUnitToSystem(value, system);
-      const formatted = formatValueParts(
-        displayValue,
-        this.plugin.settings.sigFigs,
-        system,
-        { skipSystemConversion: true },
-      );
+      const { displayValue, formatted } = this.formatForEvaluation(value, system);
       scope.vars.set(name, {
         value,
+        display: formatted.display,
         magnitude: formatted.magnitude,
         unit: formatted.unit,
-        display: formatted.display,
         sourceLine,
       });
       return {
@@ -311,17 +287,13 @@ export class CalcEngine {
         plain: `${name} = ${formatted.display}`,
       };
     }
+
     if (isConvert(line)) {
       const { expr, target } = splitConvert(line);
-      const v = this.evalExpression(expr, scope);
-      let converted = v;
-      if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-      const formatted = formatValueParts(
-        converted,
-        this.plugin.settings.sigFigs,
-        system,
-        { skipSystemConversion: true },
-      );
+      const original = this.evalExpression(expr, scope);
+      let converted = original;
+      if (typeof (original as any)?.to === "function") converted = (original as any).to(target);
+      const formatted = formatValueParts(converted, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
       return {
         kind: "conversion",
         expr,
@@ -334,14 +306,9 @@ export class CalcEngine {
         plain: `${expr} → ${target} = ${formatted.display}`,
       };
     }
+
     const value = this.evalExpression(line, scope);
-    const displayValue = normalizeUnitToSystem(value, system);
-    const formatted = formatValueParts(
-      displayValue,
-      this.plugin.settings.sigFigs,
-      system,
-      { skipSystemConversion: true },
-    );
+    const { displayValue, formatted } = this.formatForEvaluation(value, system);
     return {
       kind: "expression",
       expr: line,
@@ -352,46 +319,24 @@ export class CalcEngine {
       unit: formatted.unit,
       plain: `${line} = ${formatted.display}`,
     };
-=======
-  loadGlobalVars(entries: Record<string, GlobalVarEntry> = {}) {
-    this.globalVars.clear();
-    for (const [name, entry] of Object.entries(entries)) {
-      if (!entry || typeof entry !== "object") continue;
-      const source = entry.source ?? "";
-      let value = entry.value;
-      let display = entry.display ?? "";
-      if (source) {
-        try {
-          const ctx = this.buildGlobalEvalScope(name);
-          value = math.evaluate(source, ctx);
-          display = formatUnit(value, this.plugin.settings.sigFigs);
-        } catch (e) {
-          // fall back to persisted value/display if evaluation fails
-        }
-      }
-      if (!display && value !== undefined) {
-        try { display = formatUnit(value, this.plugin.settings.sigFigs); } catch (e) {}
-      }
-      this.globalVars.set(name, { value, display, source });
-    }
   }
 
-  private formatForDisplay(value: any, system: UnitSystem) {
+  private formatForEvaluation(value: any, system: UnitSystem) {
     const displayValue = normalizeUnitToSystem(value, system);
     const formatted = formatValueParts(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
-    return formatted;
+    return { displayValue, formatted };
   }
 
   private buildGlobalEvalScope(skip?: string): Record<string, any> {
     const scope: Record<string, any> = {};
-    for (const [k, v] of this.globalVars.entries()) {
-      if (skip && k === skip) continue;
-      scope[k] = v.value;
+    for (const [key, entry] of this.globalVars.entries()) {
+      if (skip && key === skip) continue;
+      scope[key] = entry.value;
     }
     return scope;
   }
 
-  private toGlobalEntry(entry: VarEntry): GlobalVarEntry {
+  private toGlobalEntry(entry: GlobalVarEntry): GlobalVarEntry {
     return {
       value: entry.value,
       display: entry.display,
@@ -403,55 +348,6 @@ export class CalcEngine {
 
   private isValidIdentifier(name: string) {
     return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
-  }
-
-  getGlobalVarsSnapshot(): Array<[string, GlobalVarEntry]> {
-    return Array.from(this.globalVars.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }
-
-  serializeGlobalVars(): Record<string, GlobalVarEntry> {
-    const out: Record<string, GlobalVarEntry> = {};
-    for (const [name, entry] of this.globalVars.entries()) {
-      out[name] = { ...entry, source: entry.source ?? "" };
-    }
-    return out;
-  }
-
-  async upsertGlobalVar(name: string, source: string): Promise<GlobalVarEntry> {
-    const trimmedName = name.trim();
-    const trimmedSource = source.trim();
-    if (!trimmedName) throw new Error("Name is required");
-    if (!this.isValidIdentifier(trimmedName)) throw new Error("Invalid variable name");
-    if (!trimmedSource) throw new Error("Expression is required");
-
-    const context = this.buildGlobalEvalScope(trimmedName);
-    const value = math.evaluate(trimmedSource, context);
-    const display = formatUnit(value, this.plugin.settings.sigFigs);
-    const entry: GlobalVarEntry = { value, display, source: trimmedSource };
-    this.globalVars.set(trimmedName, entry);
-    await this.plugin.saveToolkitData();
-    return entry;
-  }
-
-  async deleteGlobalVar(name: string): Promise<void> {
-    const trimmedName = name.trim();
-    if (!this.globalVars.has(trimmedName)) return;
-    this.globalVars.delete(trimmedName);
-    await this.plugin.saveToolkitData();
-  }
-
-  private buildGlobalEvalScope(skip?: string): Record<string, any> {
-    const scope: Record<string, any> = {};
-    for (const [k, v] of this.globalVars.entries()) {
-      if (skip && k === skip) continue;
-      scope[k] = v.value;
-    }
-    return scope;
-  }
-
-  private isValidIdentifier(name: string) {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
->>>>>>> origin/codex/add-api-for-managing-global-constants
   }
 }
 

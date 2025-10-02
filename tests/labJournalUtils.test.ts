@@ -7,7 +7,22 @@ import {
   getLabNotePath,
   normalizeLabNotesFolder,
   sanitizeLabNoteTitle,
+  LabNoteTemplateContext,
 } from "../src/labJournalUtils";
+
+const sampleContext = (overrides: Partial<LabNoteTemplateContext> = {}): LabNoteTemplateContext => ({
+  title: "Voltage drop analysis",
+  date: "2024-09-14",
+  time: "09:30",
+  datetime: "2024-09-14T09:30:00.000Z",
+  experimentId: "2024-09-14-Voltage-drop-analysis",
+  folder: "Lab Journal",
+  filename: "2024-09-14 Voltage drop analysis.md",
+  year: "2024",
+  month: "09",
+  day: "14",
+  ...overrides,
+});
 
 describe("labJournalUtils", () => {
   it("sanitizes titles and produces consistent filenames", () => {
@@ -34,10 +49,19 @@ describe("labJournalUtils", () => {
     assert.equal(path, "Lab Journal/2024-09-14 Untitled.md");
   });
 
-  it("embeds the experiment id slug inside the note content", () => {
-    const content = buildLabNoteContent("My Title", "2024-09-14", "My Title");
+  it("embeds substitution variables inside the note content", () => {
+    const context = sampleContext();
+    const content = buildLabNoteContent("Experiment: {{title}} on {{date}} ({{experiment_id}})", context);
 
-    assert.match(content, /experiment_id: 2024-09-14-My-Title/);
-    assert.match(content, /# My Title/);
+    assert.match(content, /Experiment: Voltage drop analysis on 2024-09-14/);
+    assert.match(content, /2024-09-14-Voltage-drop-analysis/);
+  });
+
+  it("falls back to the default template when the provided template is empty", () => {
+    const context = sampleContext();
+    const content = buildLabNoteContent("", context);
+
+    assert.match(content, /experiment_id: 2024-09-14-Voltage-drop-analysis/);
+    assert.match(content, /# Voltage drop analysis/);
   });
 });

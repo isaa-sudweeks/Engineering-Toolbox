@@ -33,6 +33,8 @@ export interface ToolkitSettings {
   sigFigs: number;
   labNotesFolder: string;
   labIndexPath: string;
+  labNoteTemplate: string;
+  labNoteTemplatePresetId: string;
   globalVarsEnabled: boolean;
   latexFormatting: boolean;
   modelViewerDefaults: ModelViewerDefaults;

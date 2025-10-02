@@ -7,39 +7,40 @@ import {
   normalizeLabNotesFolder,
   sanitizeLabNoteTitle,
 } from "./labJournalUtils";
-import {
-  buildLabNoteContent,
-  getLabNoteFileName,
-  getLabNotePath,
-  normalizeLabNotesFolder,
-  sanitizeLabNoteTitle,
-} from "./labJournalUtils";
 
 export async function createExperimentNote(plugin: EngineeringToolkitPlugin) {
   const app = plugin.app;
   const title = await plugin.prompt("Enter experiment title:");
   if (!title) return;
-  const dateStr = (app as any).moment().format("YYYY-MM-DD");
-<<<<<<< HEAD
+
+  const momentInstance = (app as any).moment?.();
+  const now = momentInstance ?? null;
+  const dateStr = now?.format?.("YYYY-MM-DD") ?? new Date().toISOString().slice(0, 10);
+  const timeStr = now?.format?.("HH:mm") ?? new Date().toISOString().slice(11, 16);
+  const isoDateTime = now?.toISOString?.() ?? new Date().toISOString();
+
   const folder = normalizeLabNotesFolder(plugin.settings.labNotesFolder || "Lab Journal");
   const safeTitle = sanitizeLabNoteTitle(title);
   const fileName = getLabNoteFileName(dateStr, safeTitle);
   const path = getLabNotePath(folder, fileName);
-  const content = buildLabNoteContent(title, dateStr, safeTitle);
-=======
-  const folderSetting = plugin.settings.labNotesFolder || "Lab Journal";
-  const folder = normalizeLabNotesFolder(folderSetting);
-  const safeTitle = sanitizeLabNoteTitle(title);
-  const fileName = getLabNoteFileName(dateStr, safeTitle);
-  const path = getLabNotePath(folder, fileName);
 
-  if (app.vault.getAbstractFileByPath(path)) {
-    new Notice("An experiment note with this title already exists.");
-    return;
-  }
+  const experimentSlug = safeTitle.replace(/\s+/g, "-");
+  const experimentId = `${dateStr}-${experimentSlug}`;
+  const [year = "", month = "", day = ""] = dateStr.split("-");
 
-  const content = buildLabNoteContent(title, dateStr, safeTitle);
->>>>>>> origin/codex/update-filename-template-and-add-validations
+  const templateSource = plugin.settings.labNoteTemplate ?? "";
+  const content = buildLabNoteContent(templateSource, {
+    title,
+    date: dateStr,
+    time: timeStr,
+    datetime: isoDateTime,
+    experimentId,
+    folder,
+    filename: fileName,
+    year,
+    month,
+    day,
+  });
 
   if (!app.vault.getAbstractFileByPath(folder)) {
     await app.vault.createFolder(folder).catch(() => {});
@@ -55,13 +56,13 @@ export async function createExperimentNote(plugin: EngineeringToolkitPlugin) {
 
   try {
     await app.vault.create(path, content);
-    const f = app.vault.getAbstractFileByPath(path);
-    if (f instanceof TFile) {
-      await app.workspace.getLeaf(true).openFile(f);
+    const file = app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      await app.workspace.getLeaf(true).openFile(file);
       await updateLabIndex(plugin, title, path, dateStr);
     }
-  } catch (e) {
-    console.error("Failed to create experiment note", e);
+  } catch (error) {
+    console.error("Failed to create experiment note", error);
     new Notice("Failed to create experiment note");
   }
 }

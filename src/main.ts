@@ -501,6 +501,15 @@ export default class EngineeringToolkitPlugin extends Plugin {
       DEFAULT_SETTINGS.modelViewerDefaults,
       this.settings.modelViewerDefaults ?? {},
     );
+    if (!this.settings.labIndexPath) {
+      this.settings.labIndexPath = DEFAULT_SETTINGS.labIndexPath;
+    }
+    if (!this.settings.labNoteTemplate) {
+      this.settings.labNoteTemplate = DEFAULT_SETTINGS.labNoteTemplate;
+    }
+    if (!this.settings.labNoteTemplatePresetId) {
+      this.settings.labNoteTemplatePresetId = DEFAULT_SETTINGS.labNoteTemplatePresetId;
+    }
     if (typeof this.settings.latexFormatting !== "boolean") {
       this.settings.latexFormatting = DEFAULT_SETTINGS.latexFormatting;
     }

@@ -1,6 +1,12 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, DropdownComponent, PluginSettingTab, Setting, TextAreaComponent, Notice } from "obsidian";
 import type EngineeringToolkitPlugin from "./main";
 import type { ToolkitSettings } from "./utils/types";
+import {
+  CUSTOM_LAB_NOTE_TEMPLATE_ID,
+  DEFAULT_LAB_NOTE_TEMPLATE,
+  DEFAULT_LAB_NOTE_TEMPLATE_ID,
+  LAB_NOTE_TEMPLATE_PRESETS,
+} from "./labJournalTemplates";
 
 export const DEFAULT_SETTINGS: ToolkitSettings = {
   autoRecalc: true,
@@ -8,6 +14,8 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
   labIndexPath: "Lab Journal/index.md",
+  labNoteTemplate: DEFAULT_LAB_NOTE_TEMPLATE,
+  labNoteTemplatePresetId: DEFAULT_LAB_NOTE_TEMPLATE_ID,
   globalVarsEnabled: false,
   latexFormatting: true,
   modelViewerDefaults: {
@@ -37,39 +45,107 @@ export class ToolkitSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Auto recalc")
       .setDesc("Recalculate calc blocks on change/open")
-      .addToggle(t => t.setValue(this.plugin.settings.autoRecalc)
-        .onChange(async v => { this.plugin.settings.autoRecalc = v; await this.plugin.saveSettings(); }));
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.autoRecalc)
+          .onChange(async v => { this.plugin.settings.autoRecalc = v; await this.plugin.saveSettings(); })
+      );
 
     new Setting(containerEl)
       .setName("Default unit system")
       .setDesc("Preferred display")
-      .addDropdown(d => d.addOptions({ "SI":"SI", "US":"US" })
-        .setValue(this.plugin.settings.defaultUnitSystem)
-        .onChange(async v => { this.plugin.settings.defaultUnitSystem = v as any; await this.plugin.saveSettings(); }));
+      .addDropdown(d =>
+        d.addOptions({ SI: "SI", US: "US" })
+          .setValue(this.plugin.settings.defaultUnitSystem)
+          .onChange(async v => { this.plugin.settings.defaultUnitSystem = v as any; await this.plugin.saveSettings(); })
+      );
 
     new Setting(containerEl)
       .setName("Significant figures")
       .setDesc("Displayed precision for results")
-      .addSlider(s => s.setLimits(3, 8, 1).setDynamicTooltip()
-        .setValue(this.plugin.settings.sigFigs)
-        .onChange(async v => { this.plugin.settings.sigFigs = v; await this.plugin.saveSettings(); }));
+      .addSlider(s =>
+        s.setLimits(3, 8, 1)
+          .setDynamicTooltip()
+          .setValue(this.plugin.settings.sigFigs)
+          .onChange(async v => { this.plugin.settings.sigFigs = v; await this.plugin.saveSettings(); })
+      );
 
     new Setting(containerEl)
       .setName("Lab notes folder")
       .setDesc("Folder for new experiment notes")
-      .addText(t => t.setPlaceholder("Lab Journal")
-        .setValue(this.plugin.settings.labNotesFolder)
-        .onChange(async v => { this.plugin.settings.labNotesFolder = v || "Lab Journal"; await this.plugin.saveSettings(); }));
+      .addText(t =>
+        t.setPlaceholder("Lab Journal")
+          .setValue(this.plugin.settings.labNotesFolder)
+          .onChange(async v => {
+            this.plugin.settings.labNotesFolder = v || "Lab Journal";
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Lab index")
       .setDesc("Path to an index note or folder for experiment listings")
-      .addText(t => t.setPlaceholder("Lab Journal/index.md")
-        .setValue(this.plugin.settings.labIndexPath)
-        .onChange(async v => {
-          this.plugin.settings.labIndexPath = v?.trim() || "";
+      .addText(t =>
+        t.setPlaceholder("Lab Journal/index.md")
+          .setValue(this.plugin.settings.labIndexPath)
+          .onChange(async v => {
+            this.plugin.settings.labIndexPath = v?.trim() || "";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl("h3", { text: "Lab journal templates" });
+
+    let presetDropdown: DropdownComponent | undefined;
+    let templateArea: TextAreaComponent | undefined;
+    let isUpdatingTemplate = false;
+
+    new Setting(containerEl)
+      .setName("Template preset")
+      .setDesc("Start from a pre-defined layout")
+      .addDropdown(drop => {
+        presetDropdown = drop;
+        LAB_NOTE_TEMPLATE_PRESETS.forEach(preset => drop.addOption(preset.id, preset.name));
+        drop.addOption(CUSTOM_LAB_NOTE_TEMPLATE_ID, "Custom");
+
+        const matchedPreset = LAB_NOTE_TEMPLATE_PRESETS.find(p => p.id === this.plugin.settings.labNoteTemplatePresetId);
+        const templateMatchesPreset = matchedPreset?.template === this.plugin.settings.labNoteTemplate;
+        const initialPresetId = templateMatchesPreset && matchedPreset ? matchedPreset.id : CUSTOM_LAB_NOTE_TEMPLATE_ID;
+
+        drop.setValue(initialPresetId).onChange(async value => {
+          if (value === CUSTOM_LAB_NOTE_TEMPLATE_ID) {
+            this.plugin.settings.labNoteTemplatePresetId = value;
+            await this.plugin.saveSettings();
+            return;
+          }
+          const preset = LAB_NOTE_TEMPLATE_PRESETS.find(p => p.id === value);
+          if (!preset) return;
+          isUpdatingTemplate = true;
+          try {
+            this.plugin.settings.labNoteTemplatePresetId = preset.id;
+            this.plugin.settings.labNoteTemplate = preset.template;
+            templateArea?.setValue(preset.template);
+            await this.plugin.saveSettings();
+          } finally {
+            isUpdatingTemplate = false;
+          }
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Lab note template")
+      .setDesc("Supports variables like {{title}}, {{date}}, {{time}}, {{datetime}}, {{experiment_id}}, {{folder}}, and {{filename}}.")
+      .addTextArea(text => {
+        templateArea = text;
+        text.setValue(this.plugin.settings.labNoteTemplate || DEFAULT_LAB_NOTE_TEMPLATE);
+        text.inputEl.rows = 14;
+        text.onChange(async value => {
+          if (isUpdatingTemplate) return;
+          this.plugin.settings.labNoteTemplate = value;
+          this.plugin.settings.labNoteTemplatePresetId = CUSTOM_LAB_NOTE_TEMPLATE_ID;
+          presetDropdown?.setValue(CUSTOM_LAB_NOTE_TEMPLATE_ID);
           await this.plugin.saveSettings();
-        }));
+        });
+      });
 
     let globalsSection: HTMLElement | null = null;
     const renderGlobals = () => {
@@ -89,9 +165,7 @@ export class ToolkitSettingTab extends PluginSettingTab {
       }
 
       const vars = engine.getGlobalVarsSnapshot();
-      if (!vars.length) {
-        globalsSection.createEl("p", { text: "No global constants defined yet." });
-      }
+      if (!vars.length) globalsSection.createEl("p", { text: "No global constants defined yet." });
 
       for (const [name, entry] of vars) {
         const row = globalsSection.createEl("div", { cls: "global-var-row" });
@@ -141,24 +215,16 @@ export class ToolkitSettingTab extends PluginSettingTab {
     };
 
     new Setting(containerEl)
-      .setName("Lab index")
-      .setDesc("Path to an index note or folder for experiment listings")
-      .addText(t => t.setPlaceholder("Lab Journal/index.md")
-        .setValue(this.plugin.settings.labIndexPath)
-        .onChange(async v => {
-          this.plugin.settings.labIndexPath = v?.trim() || "";
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
       .setName("Global variables")
       .setDesc("Make variables available across notes (experimental)")
-      .addToggle(t => t.setValue(this.plugin.settings.globalVarsEnabled)
-        .onChange(async v => {
-          this.plugin.settings.globalVarsEnabled = v;
-          await this.plugin.saveSettings();
-          renderGlobals();
-        }));
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.globalVarsEnabled)
+          .onChange(async v => {
+            this.plugin.settings.globalVarsEnabled = v;
+            await this.plugin.saveSettings();
+            renderGlobals();
+          })
+      );
 
     globalsSection = containerEl.createEl("div", { cls: "global-vars-section" });
     renderGlobals();
@@ -169,78 +235,88 @@ export class ToolkitSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Dependency status")
-      .setDesc(this.plugin.modelViewerAvailable
-        ? "Model Viewer plugin detected. Inserted embeds will render in preview."
-        : "Model Viewer plugin not detected. Install and enable the community Model Viewer plugin to render embeds.");
+      .setDesc(
+        this.plugin.modelViewerAvailable
+          ? "Model Viewer plugin detected. Inserted embeds will render in preview."
+          : "Model Viewer plugin not detected. Install and enable it to render embeds."
+      );
 
     new Setting(containerEl)
       .setName("Default alt text")
       .setDesc("Alt text applied to inserted <model-viewer> elements.")
-      .addText(t => t
-        .setPlaceholder("3D model")
-        .setValue(this.plugin.settings.modelViewerDefaults.altText)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.altText = v;
-          await this.plugin.saveSettings();
-        }));
+      .addText(t =>
+        t.setPlaceholder("3D model")
+          .setValue(this.plugin.settings.modelViewerDefaults.altText)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.altText = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Camera controls")
       .setDesc("Enable orbit controls by default.")
-      .addToggle(t => t
-        .setValue(this.plugin.settings.modelViewerDefaults.cameraControls)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.cameraControls = v;
-          await this.plugin.saveSettings();
-        }));
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.modelViewerDefaults.cameraControls)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.cameraControls = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Auto rotate")
       .setDesc("Automatically rotate models when inserted embeds load.")
-      .addToggle(t => t
-        .setValue(this.plugin.settings.modelViewerDefaults.autoRotate)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.autoRotate = v;
-          await this.plugin.saveSettings();
-        }));
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.modelViewerDefaults.autoRotate)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.autoRotate = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Background color")
       .setDesc("CSS color applied to the viewer background (leave blank for default).")
-      .addText(t => t
-        .setPlaceholder("#ffffff")
-        .setValue(this.plugin.settings.modelViewerDefaults.backgroundColor)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.backgroundColor = v;
-          await this.plugin.saveSettings();
-        }));
+      .addText(t =>
+        t.setPlaceholder("#ffffff")
+          .setValue(this.plugin.settings.modelViewerDefaults.backgroundColor)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.backgroundColor = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Environment image")
       .setDesc("Default environment-image attribute value (optional).")
-      .addText(t => t
-        .setPlaceholder("URL or vault path")
-        .setValue(this.plugin.settings.modelViewerDefaults.environmentImage)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.environmentImage = v;
-          await this.plugin.saveSettings();
-        }));
+      .addText(t =>
+        t.setPlaceholder("URL or vault path")
+          .setValue(this.plugin.settings.modelViewerDefaults.environmentImage)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.environmentImage = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("Exposure")
       .setDesc("Default exposure attribute (leave blank to omit).")
-      .addText(t => t
-        .setPlaceholder("1")
-        .setValue(this.plugin.settings.modelViewerDefaults.exposure)
-        .onChange(async v => {
-          this.plugin.settings.modelViewerDefaults.exposure = v;
-          await this.plugin.saveSettings();
-        }));
+      .addText(t =>
+        t.setPlaceholder("1")
+          .setValue(this.plugin.settings.modelViewerDefaults.exposure)
+          .onChange(async v => {
+            this.plugin.settings.modelViewerDefaults.exposure = v;
+            await this.plugin.saveSettings();
+          })
+      );
 
     new Setting(containerEl)
       .setName("LaTeX formatting")
       .setDesc("Render calculator results with MathJax (disable for plain text)")
-      .addToggle(t => t.setValue(this.plugin.settings.latexFormatting)
-        .onChange(async v => { this.plugin.settings.latexFormatting = v; await this.plugin.saveSettings(); }));
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.latexFormatting)
+          .onChange(async v => { this.plugin.settings.latexFormatting = v; await this.plugin.saveSettings(); })
+      );
   }
 }

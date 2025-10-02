@@ -1,3 +1,5 @@
+import { DEFAULT_LAB_NOTE_TEMPLATE } from "./labJournalTemplates";
+
 const INVALID_FILENAME_CHARACTERS = /[\\/:*?"<>|]/g;
 
 export function sanitizeLabNoteTitle(rawTitle: string): string {
@@ -23,44 +25,35 @@ export function getLabNotePath(folder: string, fileName: string): string {
   return `${folder}/${fileName}`;
 }
 
-export function buildLabNoteContent(
-  title: string,
-  dateStr: string,
-  safeTitle: string,
-): string {
-  const experimentId = `${dateStr}-${safeTitle.replace(/\s+/g, "-")}`;
-  return `---
-experiment_id: ${experimentId}
-date: ${dateStr}
-tags: lab
----
+export interface LabNoteTemplateContext {
+  title: string;
+  date: string;
+  time: string;
+  datetime: string;
+  experimentId: string;
+  folder: string;
+  filename: string;
+  year: string;
+  month: string;
+  day: string;
+}
 
-# ${title}
+export function buildLabNoteContent(templateSource: string, context: LabNoteTemplateContext): string {
+  const template = templateSource?.trim().length ? templateSource : DEFAULT_LAB_NOTE_TEMPLATE;
+  const substitutions: Record<string, string> = {
+    title: context.title,
+    date: context.date,
+    iso_date: context.date,
+    time: context.time,
+    datetime: context.datetime,
+    iso_datetime: context.datetime,
+    experiment_id: context.experimentId,
+    folder: context.folder,
+    filename: context.filename,
+    year: context.year,
+    month: context.month,
+    day: context.day,
+  };
 
-**Date:** ${dateStr}
-**Researchers:**
-
-## Objective
--
-
-## Procedure
-1.
-
-## Data & Calculations
-\`\`\`calc
-# Define inputs
-mass = 5 kg
-accel = 9.81 m/s^2
-force = mass * accel
-
-# Convert example
-force -> lbf
-\`\`\`
-
-## Results
--
-
-## Conclusion
--
-`;
+  return template.replace(/{{\s*(\w+)\s*}}/g, (_, key: string) => substitutions[key] ?? "");
 }
