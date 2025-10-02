@@ -1,4 +1,4 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
@@ -37,7 +37,65 @@ export default class EngineeringToolkitPlugin extends Plugin {
       name: "Recalculate current note",
       callback: async () => {
         const file = this.app.workspace.getActiveFile();
-        if (file) await this.app.workspace.getLeaf(false).openFile(file);
+        if (!file) {
+          new Notice("No active file to recalculate.");
+          return;
+        }
+
+        const originalAutoRecalc = this.settings.autoRecalc;
+        try {
+          const content = await this.app.vault.read(file);
+          const blockRegex = /```calc(?:[^\n]*)\n([\s\S]*?)```/g;
+          const blocks: string[] = [];
+          let match: RegExpExecArray | null;
+          while ((match = blockRegex.exec(content)) !== null) {
+            blocks.push(match[1]);
+          }
+
+          if (!blocks.length) {
+            this.calc.clearScope(file.path);
+            this.currentScope = null;
+            this.refreshVariablesView(null);
+            new Notice("No calc blocks found in this note.");
+            return;
+          }
+
+          this.calc.clearScope(file.path);
+          if (!originalAutoRecalc) this.settings.autoRecalc = true;
+
+          const ctx = {
+            sourcePath: file.path,
+            docId: file.path,
+            frontmatter: this.app.metadataCache.getFileCache(file)?.frontmatter ?? null,
+            getSectionInfo: () => null,
+            addChild: () => {}
+          } as unknown as MarkdownPostProcessorContext;
+
+          const errors: string[] = [];
+          for (const block of blocks) {
+            const result = await this.calc.evaluateBlock(block, ctx);
+            const errorNodes = result.querySelectorAll<HTMLElement>(".calc-error");
+            errorNodes.forEach(node => {
+              const text = node.textContent?.trim();
+              if (text) errors.push(text);
+            });
+          }
+
+          this.currentScope = (this.calc as any)["getScope"](file.path);
+          this.refreshVariablesView(this.currentScope);
+
+          if (errors.length) {
+            const [firstError] = errors;
+            new Notice(`Recalculated with ${errors.length} error${errors.length === 1 ? "" : "s"}. ${firstError}`);
+          } else {
+            new Notice("Calc blocks recalculated successfully.");
+          }
+        } catch (e: any) {
+          console.error("Failed to recalculate note", e);
+          new Notice(`Failed to recalculate: ${e?.message ?? e}`);
+        } finally {
+          this.settings.autoRecalc = originalAutoRecalc;
+        }
       }
     });
 
