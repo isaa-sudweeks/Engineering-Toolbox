@@ -16,4 +16,8 @@ export interface ToolkitSettings {
   sigFigs: number;
   labNotesFolder: string;
   globalVarsEnabled: boolean;
+  variablesPanelEnabled: boolean;
+  labJournalEnabled: boolean;
+  diagramHelpersEnabled: boolean;
+  modelEmbedsEnabled: boolean;
 }

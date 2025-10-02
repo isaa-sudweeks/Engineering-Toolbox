@@ -37,3 +37,7 @@ Open the **Variables Panel** via Command Palette to view current note's variable
 - Significant figures
 - Lab notes folder
 - Global variables (experimental)
+- Variables panel toggle
+- Lab journal helpers toggle
+- Diagram helpers toggle
+- Model embeds toggle

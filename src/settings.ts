@@ -7,7 +7,11 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   defaultUnitSystem: "SI",
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
-  globalVarsEnabled: false
+  globalVarsEnabled: false,
+  variablesPanelEnabled: true,
+  labJournalEnabled: true,
+  diagramHelpersEnabled: false,
+  modelEmbedsEnabled: false
 };
 
 export class ToolkitSettingTab extends PluginSettingTab {
@@ -54,6 +58,49 @@ export class ToolkitSettingTab extends PluginSettingTab {
       .setName("Global variables")
       .setDesc("Make variables available across notes (experimental)")
       .addToggle(t => t.setValue(this.plugin.settings.globalVarsEnabled)
-        .onChange(async v => { this.plugin.settings.globalVarsEnabled = v; await this.plugin.saveSettings(); }));
+        .onChange(async v => {
+          this.plugin.settings.globalVarsEnabled = v;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(containerEl)
+      .setName("Variables panel")
+      .setDesc("Enable the right-side variables view and related commands")
+      .addToggle(t => t.setValue(this.plugin.settings.variablesPanelEnabled)
+        .onChange(async v => {
+          this.plugin.settings.variablesPanelEnabled = v;
+          await this.plugin.saveSettings();
+          await this.plugin.applyFeatureToggles();
+        }));
+
+    new Setting(containerEl)
+      .setName("Lab journal helpers")
+      .setDesc("Offer commands to scaffold experiment notes")
+      .addToggle(t => t.setValue(this.plugin.settings.labJournalEnabled)
+        .onChange(async v => {
+          this.plugin.settings.labJournalEnabled = v;
+          await this.plugin.saveSettings();
+          await this.plugin.applyFeatureToggles();
+        }));
+
+    new Setting(containerEl)
+      .setName("Diagram helpers")
+      .setDesc("Expose commands that insert diagram placeholders")
+      .addToggle(t => t.setValue(this.plugin.settings.diagramHelpersEnabled)
+        .onChange(async v => {
+          this.plugin.settings.diagramHelpersEnabled = v;
+          await this.plugin.saveSettings();
+          await this.plugin.applyFeatureToggles();
+        }));
+
+    new Setting(containerEl)
+      .setName("Model embeds")
+      .setDesc("Enable helpers for embedding 3D/technical models")
+      .addToggle(t => t.setValue(this.plugin.settings.modelEmbedsEnabled)
+        .onChange(async v => {
+          this.plugin.settings.modelEmbedsEnabled = v;
+          await this.plugin.saveSettings();
+          await this.plugin.applyFeatureToggles();
+        }));
   }
 }
