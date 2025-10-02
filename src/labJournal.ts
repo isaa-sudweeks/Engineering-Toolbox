@@ -1,50 +1,47 @@
 import { Notice, TFile } from "obsidian";
 import type EngineeringToolkitPlugin from "./main";
+import { DEFAULT_LAB_NOTE_TEMPLATE } from "./labJournalTemplates";
 
 export async function createExperimentNote(plugin: EngineeringToolkitPlugin) {
   const app = plugin.app;
   const title = await plugin.prompt("Enter experiment title:");
   if (!title) return;
-  const dateStr = (app as any).moment().format("YYYY-MM-DD");
+
+  const momentInstance = (app as any).moment?.();
+  const now = momentInstance ?? null;
+  const dateStr = now?.format?.("YYYY-MM-DD") ?? new Date().toISOString().slice(0, 10);
+  const timeStr = now?.format?.("HH:mm") ?? new Date().toISOString().slice(11, 16);
+  const isoDateTime = now?.toISOString?.() ?? new Date().toISOString();
+
   const folder = plugin.settings.labNotesFolder || "Lab Journal";
-  const safeTitle = title.replace(/[\\/:*?"<>|]/g, "-");
-  const fileName = `${dateStr} ${safeTitle}.md";
+  const rawSafeTitle = title.trim().replace(/[\\/:*?"<>|]/g, "-");
+  const safeTitle = rawSafeTitle.length > 0 ? rawSafeTitle : "Experiment";
+  const fileName = `${dateStr} ${safeTitle}.md`;
   const path = `${folder}/${fileName}`;
+  const experimentSlug = safeTitle.trim().replace(/\s+/g, "-");
+  const experimentId = `${dateStr}-${experimentSlug}`;
 
-  const content = `---
-experiment_id: ${dateStr}-${safeTitle.replace(/\s+/g,"-")}
-date: ${dateStr}
-tags: lab
----
+  const templateSource = plugin.settings.labNoteTemplate ?? "";
+  const template = templateSource.trim().length > 0 ? templateSource : DEFAULT_LAB_NOTE_TEMPLATE;
 
-# ${title}
+  const [year, month = "", day = ""] = dateStr.split("-");
 
-**Date:** ${dateStr}  
-**Researchers:** 
+  const substitutions: Record<string, string> = {
+    title,
+    date: dateStr,
+    iso_date: dateStr,
+    time: timeStr,
+    datetime: isoDateTime,
+    iso_datetime: isoDateTime,
+    experiment_id: experimentId,
+    folder,
+    filename: fileName,
+    year: year ?? "",
+    month,
+    day
+  };
 
-## Objective
-- 
-
-## Procedure
-1. 
-
-## Data & Calculations
-\\`\\`\\`calc
-# Define inputs
-mass = 5 kg
-accel = 9.81 m/s^2
-force = mass * accel
-
-# Convert example
-force -> lbf
-\\`\\`\\`
-
-## Results
-- 
-
-## Conclusion
-- 
-`;
+  const content = template.replace(/{{\s*(\w+)\s*}}/g, (_, key: string) => substitutions[key] ?? "");
 
   if (!app.vault.getAbstractFileByPath(folder)) {
     await app.vault.createFolder(folder).catch(() => {});

@@ -15,5 +15,7 @@ export interface ToolkitSettings {
   defaultUnitSystem: "SI" | "US";
   sigFigs: number;
   labNotesFolder: string;
+  labNoteTemplate: string;
+  labNoteTemplatePresetId: string;
   globalVarsEnabled: boolean;
 }
