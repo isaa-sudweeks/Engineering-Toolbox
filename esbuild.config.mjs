@@ -2,7 +2,7 @@ import esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");
 
-esbuild.build({
+const buildOptions = {
   entryPoints: ["src/main.ts"],
   outfile: "main.js",
   bundle: true,
@@ -11,13 +11,18 @@ esbuild.build({
   external: ["obsidian"],
   sourcemap: watch ? "inline" : false,
   minify: !watch,
-  logLevel: "info",
-  watch: watch && {
+  logLevel: "info"
+};
+
+if (watch) {
+  buildOptions.watch = {
     onRebuild(err) {
       if (err) console.error("⚠️ Rebuild failed:", err);
       else console.log("✅ Rebuilt");
     }
-  }
-}).then(() => {
+  };
+}
+
+esbuild.build(buildOptions).then(() => {
   console.log(watch ? "👀 Watching…" : "✅ Built");
 });
