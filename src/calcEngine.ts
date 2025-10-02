@@ -7,6 +7,7 @@ export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
   private globalVars = new Map<string, VarEntry>();
+  private readonly unitNames = Object.freeze(Object.keys(math.Unit.UNITS).sort((a, b) => a.localeCompare(b)));
 
   constructor(plugin: EngineeringToolkitPlugin) { this.plugin = plugin; }
 
@@ -14,7 +15,13 @@ export class CalcEngine {
     if (!this.scopes.has(filePath)) this.scopes.set(filePath, { vars: new Map() });
     return this.scopes.get(filePath)!;
   }
-  clearScope(filePath: string) { this.scopes.delete(filePath); }
+  peekScope(filePath: string): NoteScope | null { return this.scopes.get(filePath) ?? null; }
+  clearScope(filePath: string) {
+    this.scopes.delete(filePath);
+    this.plugin.handleScopeChanged(filePath);
+  }
+  listGlobalVars(): ReadonlyMap<string, VarEntry> { return this.globalVars; }
+  listKnownUnits(): readonly string[] { return this.unitNames; }
 
   async evaluateBlock(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
     const container = document.createElement("div");
@@ -58,6 +65,7 @@ export class CalcEngine {
       container.appendChild(row);
     }
     this.plugin.refreshVariablesView(scope);
+    this.plugin.handleScopeChanged(filePath);
     return container;
   }
 

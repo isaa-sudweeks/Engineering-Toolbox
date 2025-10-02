@@ -7,7 +7,8 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   defaultUnitSystem: "SI",
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
-  globalVarsEnabled: false
+  globalVarsEnabled: false,
+  autocompleteEnabled: true
 };
 
 export class ToolkitSettingTab extends PluginSettingTab {
@@ -55,5 +56,15 @@ export class ToolkitSettingTab extends PluginSettingTab {
       .setDesc("Make variables available across notes (experimental)")
       .addToggle(t => t.setValue(this.plugin.settings.globalVarsEnabled)
         .onChange(async v => { this.plugin.settings.globalVarsEnabled = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName("Calc block autocomplete")
+      .setDesc("Suggest scope variables and units while editing calc blocks")
+      .addToggle(t => t.setValue(this.plugin.settings.autocompleteEnabled)
+        .onChange(async v => {
+          this.plugin.settings.autocompleteEnabled = v;
+          await this.plugin.saveSettings();
+          this.plugin.updateAutocompleteSetting();
+        }));
   }
 }

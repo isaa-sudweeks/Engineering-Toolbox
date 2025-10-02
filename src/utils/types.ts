@@ -16,4 +16,5 @@ export interface ToolkitSettings {
   sigFigs: number;
   labNotesFolder: string;
   globalVarsEnabled: boolean;
+  autocompleteEnabled: boolean;
 }

@@ -16,6 +16,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.19.0",
     "mathjs": "^13.0.1"
   }
 }

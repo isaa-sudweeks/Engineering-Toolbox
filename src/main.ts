@@ -1,20 +1,26 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Plugin, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
 import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
+import { ScopeCompletionManager } from "./autocomplete";
+import type { Completion } from "@codemirror/autocomplete";
 
 export default class EngineeringToolkitPlugin extends Plugin {
   settings: ToolkitSettings;
   private calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
+  private completionManager: ScopeCompletionManager;
 
   async onload() {
     console.log("Loading Engineering Toolkit");
     await this.loadSettings();
     this.calc = new CalcEngine(this);
+    this.completionManager = new ScopeCompletionManager(this);
+    this.registerEditorExtension(this.completionManager.extension);
+    this.updateAutocompleteSetting();
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
 
@@ -28,7 +34,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {
       const out = await this.calc.evaluateBlock(source, ctx);
       el.appendChild(out);
-      this.currentScope = (this.calc as any)["getScope"](ctx.sourcePath);
+      this.currentScope = this.calc.getScope(ctx.sourcePath || "untitled");
       this.refreshVariablesView(this.currentScope!);
     });
 
@@ -67,6 +73,41 @@ export default class EngineeringToolkitPlugin extends Plugin {
     for (const leaf of leaves) {
       (leaf.view as VariablesView).renderScope(scope || undefined);
     }
+  }
+
+  handleScopeChanged(_filePath: string) {
+    this.completionManager?.notifyChanged();
+  }
+
+  updateAutocompleteSetting() {
+    this.completionManager?.updateEnabledState();
+    if (this.settings.autocompleteEnabled) this.completionManager?.notifyChanged();
+  }
+
+  getScopeCompletions(filePath: string | null): Completion[] {
+    if (!this.calc) return [];
+    const seen = new Set<string>();
+    const options: Completion[] = [];
+    const add = (label: string, detail: string, type: Completion["type"]) => {
+      if (seen.has(label)) return;
+      seen.add(label);
+      options.push({ label, detail, type });
+    };
+
+    if (filePath) {
+      const scope = this.calc.peekScope(filePath);
+      if (scope) {
+        for (const name of scope.vars.keys()) add(name, "Local variable", "variable");
+      }
+    }
+
+    if (this.settings.globalVarsEnabled) {
+      for (const name of this.calc.listGlobalVars().keys()) add(name, "Global variable", "variable");
+    }
+
+    for (const unit of this.calc.listKnownUnits()) add(unit, "Unit", "constant");
+
+    return options;
   }
 
   async onunload() {
