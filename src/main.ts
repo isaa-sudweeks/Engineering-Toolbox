@@ -1,4 +1,5 @@
 import { Notice, Plugin, WorkspaceLeaf, MarkdownView, Editor, SuggestModal, TFile, normalizePath } from "obsidian";
+import type { MarkdownPostProcessorContext } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope, GlobalVarEntry, ToolkitData } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
@@ -498,9 +499,65 @@ export default class EngineeringToolkitPlugin extends Plugin {
 
   async recalculateActiveNote() {
     const file = this.app.workspace.getActiveFile();
-    if (!file) return;
-    this.calc.clearScope(file.path);
-    await this.app.workspace.getLeaf(false).openFile(file);
+    if (!file) {
+      new Notice("No active file to recalculate.");
+      return;
+    }
+
+    const originalAutoRecalc = this.settings.autoRecalc;
+    try {
+      const content = await this.app.vault.read(file);
+      const blockRegex = /```calc(?:[^\n]*)\n([\s\S]*?)```/g;
+      const blocks: string[] = [];
+      let match: RegExpExecArray | null;
+      while ((match = blockRegex.exec(content)) !== null) {
+        blocks.push(match[1]);
+      }
+
+      if (!blocks.length) {
+        this.calc.clearScope(file.path);
+        this.currentScope = null;
+        this.refreshVariablesView(null);
+        new Notice("No calc blocks found in this note.");
+        return;
+      }
+
+      this.calc.clearScope(file.path);
+      if (!originalAutoRecalc) this.settings.autoRecalc = true;
+
+      const ctx = {
+        sourcePath: file.path,
+        docId: file.path,
+        frontmatter: this.app.metadataCache.getFileCache(file)?.frontmatter ?? null,
+        getSectionInfo: () => null,
+        addChild: () => {}
+      } as unknown as MarkdownPostProcessorContext;
+
+      const errors: string[] = [];
+      for (const block of blocks) {
+        const result = await this.calc.evaluateBlock(block, ctx);
+        const errorNodes = result.querySelectorAll<HTMLElement>(".calc-error");
+        errorNodes.forEach(node => {
+          const text = node.textContent?.trim();
+          if (text) errors.push(text);
+        });
+      }
+
+      this.currentScope = this.calc.getScope(file.path);
+      this.refreshVariablesView(this.currentScope);
+
+      if (errors.length) {
+        const [firstError] = errors;
+        new Notice(`Recalculated with ${errors.length} error${errors.length === 1 ? "" : "s"}. ${firstError}`);
+      } else {
+        new Notice("Calc blocks recalculated successfully.");
+      }
+    } catch (error: any) {
+      console.error("Failed to recalculate note", error);
+      new Notice(`Failed to recalculate: ${error?.message ?? error}`);
+    } finally {
+      this.settings.autoRecalc = originalAutoRecalc;
+    }
   }
 
   async onunload() {
