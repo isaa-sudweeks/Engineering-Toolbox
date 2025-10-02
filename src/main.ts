@@ -4,17 +4,20 @@ import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
 import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
+import { PythonExporter } from "./exporter";
 
 export default class EngineeringToolkitPlugin extends Plugin {
   settings: ToolkitSettings;
-  private calc: CalcEngine;
+  calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
+  private exporter: PythonExporter;
 
   async onload() {
     console.log("Loading Engineering Toolkit");
     await this.loadSettings();
     this.calc = new CalcEngine(this);
+    this.exporter = new PythonExporter(this);
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
 
@@ -23,6 +26,12 @@ export default class EngineeringToolkitPlugin extends Plugin {
       id: "open-variables-view",
       name: "Open Variables Panel",
       callback: async () => { await this.openVariablesView(); }
+    });
+
+    this.addCommand({
+      id: "export-calculations-python",
+      name: "Export calculations to Python",
+      callback: async () => { await this.exporter.exportActiveNoteOrSelection(); }
     });
 
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {

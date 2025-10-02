@@ -16,4 +16,7 @@ export interface ToolkitSettings {
   sigFigs: number;
   labNotesFolder: string;
   globalVarsEnabled: boolean;
+  exportFormat: "script" | "notebook";
+  exportOutputFolder: string;
+  exportVariableStyle: "preserve" | "snake_case" | "camelCase";
 }

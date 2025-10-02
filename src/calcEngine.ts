@@ -3,6 +3,29 @@ import { math, formatUnit } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
+export type EvaluatedLineType = "blank" | "comment" | "assignment" | "convert" | "expression" | "error";
+
+export interface EvaluatedLine {
+  raw: string;
+  line: string;
+  type: EvaluatedLineType;
+  name?: string;
+  expr?: string;
+  target?: string;
+  value?: any;
+  display?: string;
+  error?: string;
+}
+
+export interface EvaluateOptions {
+  /** When false, scope mutations are kept local to the provided scope */
+  persist?: boolean;
+  /** Optional working scope when persist is false */
+  scope?: NoteScope;
+  /** Clear the working scope before evaluating */
+  resetScope?: boolean;
+}
+
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
@@ -21,44 +44,89 @@ export class CalcEngine {
     container.classList.add("calc-output");
 
     const filePath = ctx.sourcePath || "untitled";
-    if (!this.plugin.settings.autoRecalc) this.clearScope(filePath);
-    const scope = this.getScope(filePath);
+    const { entries, scope } = this.evaluateToEntries(source, filePath, {
+      persist: true,
+      resetScope: !this.plugin.settings.autoRecalc
+    });
 
-    const lines = source.split(/\r?\n/);
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
+    for (const entry of entries) {
+      if (entry.type === "blank") continue;
       const row = document.createElement("div");
       row.classList.add("calc-line");
-      try {
-        if (line.startsWith("//") || line.startsWith("#")) {
-          row.innerHTML = `<span class="calc-comment">${escapeHtml(line)}</span>`;
-        } else if (isAssignment(line)) {
-          const { name, expr } = splitAssignment(line);
-          const value = this.evalExpression(expr, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          scope.vars.set(name, { value, display });
-          row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${display}</span>`;
-        } else if (isConvert(line)) {
-          const { expr, target } = splitConvert(line);
-          const v = this.evalExpression(expr, scope);
-          let converted = v;
-          if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-          const display = formatUnit(converted, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${escapeHtml(expr)} → ${escapeHtml(target)} = ${display}</span>`;
-        } else {
-          const value = this.evalExpression(line, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${display}</span>`;
-        }
-      } catch (e: any) {
-        row.classList.add("calc-error");
-        row.textContent = `Error: ${e?.message ?? String(e)}`;
+      switch (entry.type) {
+        case "comment":
+          row.innerHTML = `<span class="calc-comment">${escapeHtml(entry.line)}</span>`;
+          break;
+        case "assignment":
+          row.innerHTML = `<span class="lhs">${escapeHtml(entry.name || "")}</span><span class="rhs">= ${entry.display ?? ""}</span>`;
+          break;
+        case "convert":
+          row.innerHTML = `<span class="rhs">${escapeHtml(entry.expr || "")} → ${escapeHtml(entry.target || "")} = ${entry.display ?? ""}</span>`;
+          break;
+        case "expression":
+          row.innerHTML = `<span class="rhs">${entry.display ?? ""}</span>`;
+          break;
+        case "error":
+          row.classList.add("calc-error");
+          row.textContent = `Error: ${entry.error}`;
+          break;
       }
       container.appendChild(row);
     }
     this.plugin.refreshVariablesView(scope);
     return container;
+  }
+
+  evaluateToEntries(source: string, filePath: string, options?: EvaluateOptions): { entries: EvaluatedLine[]; scope: NoteScope } {
+    const persist = options?.persist ?? true;
+    let workingScope: NoteScope;
+    if (persist) {
+      const shouldReset = options?.resetScope ?? (!this.plugin.settings.autoRecalc);
+      if (shouldReset) this.clearScope(filePath);
+      workingScope = this.getScope(filePath);
+    } else if (options?.scope) {
+      if (options.resetScope) options.scope.vars.clear();
+      workingScope = options.scope;
+    } else {
+      workingScope = { vars: new Map() };
+    }
+
+    const entries: EvaluatedLine[] = [];
+    const lines = source.split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) {
+        entries.push({ raw, line: "", type: "blank" });
+        continue;
+      }
+      try {
+        if (line.startsWith("//") || line.startsWith("#")) {
+          entries.push({ raw, line, type: "comment" });
+        } else if (isAssignment(line)) {
+          const { name, expr } = splitAssignment(line);
+          const value = this.evalExpression(expr, workingScope);
+          const display = formatUnit(value, this.plugin.settings.sigFigs);
+          workingScope.vars.set(name, { value, display });
+          entries.push({ raw, line, type: "assignment", name, expr, value, display });
+        } else if (isConvert(line)) {
+          const { expr, target } = splitConvert(line);
+          const v = this.evalExpression(expr, workingScope);
+          let converted = v;
+          if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
+          const display = formatUnit(converted, this.plugin.settings.sigFigs);
+          entries.push({ raw, line, type: "convert", expr, target, value: converted, display });
+        } else {
+          const value = this.evalExpression(line, workingScope);
+          const display = formatUnit(value, this.plugin.settings.sigFigs);
+          entries.push({ raw, line, type: "expression", expr: line, value, display });
+        }
+      } catch (e: any) {
+        const message = e?.message ?? String(e);
+        entries.push({ raw, line, type: "error", error: message });
+      }
+    }
+
+    return { entries, scope: workingScope };
   }
 
   private evalExpression(expr: string, scope: NoteScope): any {
