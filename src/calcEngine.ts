@@ -1,10 +1,10 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import {
   math,
-  formatUnit,
   formatUnitLatex,
   escapeLatex,
   normalizeUnitToSystem,
+  formatValueParts,
 } from "./utils/format";
 import type { UnitSystem } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
@@ -19,6 +19,8 @@ type LineResult =
       value: any;
       displayValue: any;
       display: string;
+      magnitude: string;
+      unit: string;
       plain: string;
     }
   | {
@@ -28,6 +30,8 @@ type LineResult =
       value: any;
       displayValue: any;
       display: string;
+      magnitude: string;
+      unit: string;
       plain: string;
     }
   | {
@@ -36,6 +40,8 @@ type LineResult =
       value: any;
       displayValue: any;
       display: string;
+      magnitude: string;
+      unit: string;
       plain: string;
     };
 
@@ -61,6 +67,7 @@ export class CalcEngine {
     const scope = this.getScope(filePath);
     const useLatex = this.plugin.settings.latexFormatting;
     const system = this.plugin.settings.defaultUnitSystem;
+
     const lines = source.split(/\r?\n/);
     for (const raw of lines) {
       const line = raw.trim();
@@ -68,7 +75,7 @@ export class CalcEngine {
       const row = document.createElement("div");
       row.classList.add("calc-line");
       try {
-        const result = this.evaluateLine(line, scope, system);
+        const result = this.evaluateLine(line, scope, system, raw.trim());
         row.dataset.plain = result.plain;
         if (result.kind === "comment") {
           const comment = document.createElement("span");
@@ -176,6 +183,10 @@ export class CalcEngine {
     return span;
   }
 
+  getGlobalVariables(): Map<string, VarEntry> {
+    return this.globalVars;
+  }
+
   private evalExpression(expr: string, scope: NoteScope): any {
     const mscope: Record<string, any> = {};
     if (this.plugin.settings.globalVarsEnabled) {
@@ -185,7 +196,7 @@ export class CalcEngine {
     return math.evaluate(expr, mscope);
   }
 
-  private evaluateLine(line: string, scope: NoteScope, system: UnitSystem): LineResult {
+  private evaluateLine(line: string, scope: NoteScope, system: UnitSystem, sourceLine?: string): LineResult {
     if (line.startsWith("//") || line.startsWith("#")) {
       return { kind: "comment", text: line, plain: line };
     }
@@ -193,16 +204,29 @@ export class CalcEngine {
       const { name, expr } = splitAssignment(line);
       const value = this.evalExpression(expr, scope);
       const displayValue = normalizeUnitToSystem(value, system);
-      const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
-      scope.vars.set(name, { value, display });
+      const formatted = formatValueParts(
+        displayValue,
+        this.plugin.settings.sigFigs,
+        system,
+        { skipSystemConversion: true },
+      );
+      scope.vars.set(name, {
+        value,
+        magnitude: formatted.magnitude,
+        unit: formatted.unit,
+        display: formatted.display,
+        sourceLine,
+      });
       return {
         kind: "assignment",
         name,
         expr,
         value,
         displayValue,
-        display,
-        plain: `${name} = ${display}`,
+        display: formatted.display,
+        magnitude: formatted.magnitude,
+        unit: formatted.unit,
+        plain: `${name} = ${formatted.display}`,
       };
     }
     if (isConvert(line)) {
@@ -210,27 +234,41 @@ export class CalcEngine {
       const v = this.evalExpression(expr, scope);
       let converted = v;
       if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-      const display = formatUnit(converted, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
+      const formatted = formatValueParts(
+        converted,
+        this.plugin.settings.sigFigs,
+        system,
+        { skipSystemConversion: true },
+      );
       return {
         kind: "conversion",
         expr,
         target,
         value: converted,
         displayValue: converted,
-        display,
-        plain: `${expr} → ${target} = ${display}`,
+        display: formatted.display,
+        magnitude: formatted.magnitude,
+        unit: formatted.unit,
+        plain: `${expr} → ${target} = ${formatted.display}`,
       };
     }
     const value = this.evalExpression(line, scope);
     const displayValue = normalizeUnitToSystem(value, system);
-    const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
+    const formatted = formatValueParts(
+      displayValue,
+      this.plugin.settings.sigFigs,
+      system,
+      { skipSystemConversion: true },
+    );
     return {
       kind: "expression",
       expr: line,
       value,
       displayValue,
-      display,
-      plain: `${line} = ${display}`,
+      display: formatted.display,
+      magnitude: formatted.magnitude,
+      unit: formatted.unit,
+      plain: `${line} = ${formatted.display}`,
     };
   }
 }

@@ -5,9 +5,38 @@
 .calc-line .rhs,
 .calc-inline .rhs { font-variant-numeric: tabular-nums; }
 .calc-error { color: var(--color-red); }
+.calc-comment { color: var(--text-muted); font-style: italic; }
 .calc-inline { display: inline-flex; align-items: baseline; gap: .25rem; font-variant-numeric: tabular-nums; padding: 0 .25em; border-radius: 4px; background-color: var(--background-secondary); }
 .calc-inline-error { color: var(--color-red); font-weight: 600; }
-.variables-panel { padding: 12px; }
-.variables-panel .var-item { display: flex; gap: .5rem; margin: 4px 0; }
-.variables-panel .var-name { font-weight: 600; }
-.variables-panel .var-edit { margin-left: auto; }
+
+.variables-panel { padding: 12px; display: flex; flex-direction: column; gap: 0.75rem; }
+.variables-panel .var-header { display: flex; align-items: center; gap: 0.75rem; }
+.variables-panel .var-header h3 { margin: 0; }
+.variables-panel .var-filter { margin-left: auto; }
+.variables-panel .help { color: var(--text-muted); font-size: 0.85rem; }
+.variables-panel .var-tools { padding: 8px; border-radius: 6px; background-color: var(--background-secondary-alt); }
+.variables-panel .var-groups { display: flex; flex-direction: column; gap: 0.75rem; }
+.variables-panel .var-group h4 { margin: 0 0 4px; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-faint); }
+.variables-panel .var-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.variables-panel .var-item { display: grid; gap: 0.5rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1.2fr) auto; align-items: center; padding: 4px 6px; border-radius: 6px; background-color: var(--background-secondary-alt); }
+.variables-panel .var-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.variables-panel .var-inputs { display: flex; gap: 0.4rem; }
+.variables-panel .var-inputs input { width: 100%; }
+.variables-panel .var-display { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.variables-panel .var-actions { display: flex; justify-content: flex-end; }
+.variables-panel .var-actions .var-copy { margin-left: auto; }
+.variables-panel .var-empty { color: var(--text-muted); font-style: italic; padding: 4px 0; }
+
+.unit-picker-container { display: flex; flex-direction: column; gap: 0.5rem; }
+.unit-picker-system { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.unit-picker-divider { border-top: 1px solid var(--background-modifier-border); margin: 0.5rem 0; }
+.unit-picker-list { display: flex; flex-direction: column; gap: 0.75rem; max-height: 320px; overflow-y: auto; }
+.unit-picker-category { margin: 0; font-weight: 600; }
+.unit-picker-buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.unit-picker-buttons button { padding: 4px 8px; border-radius: 4px; }
+
+.unit-picker-inline { display: flex; flex-direction: column; gap: 0.5rem; }
+.unit-picker-controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.unit-picker-label { font-weight: 600; }
+.unit-picker-unit-select { min-width: 160px; }
+.unit-picker-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }

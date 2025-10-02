@@ -8,6 +8,12 @@ export interface FormatUnitOptions {
   skipSystemConversion?: boolean;
 }
 
+export interface FormattedValueParts {
+  magnitude: string;
+  unit: string;
+  display: string;
+}
+
 const UNIT_SYSTEM_DEFAULTS: Record<UnitSystem, Record<string, string>> = {
   SI: {
     "0,1,0,0,0,0,0,0,0": "m",
@@ -25,7 +31,7 @@ const UNIT_SYSTEM_DEFAULTS: Record<UnitSystem, Record<string, string>> = {
     "1,-3,0,0,0,0,0,0,0": "kg/m^3",
     "0,0,-1,0,0,0,0,0,0": "Hz",
     "0,0,0,0,1,0,0,0,0": "degC",
-    "0,0,0,0,0,0,0,1,0": "rad"
+    "0,0,0,0,0,0,0,1,0": "rad",
   },
   US: {
     "0,1,0,0,0,0,0,0,0": "ft",
@@ -43,15 +49,15 @@ const UNIT_SYSTEM_DEFAULTS: Record<UnitSystem, Record<string, string>> = {
     "1,-3,0,0,0,0,0,0,0": "lb/ft^3",
     "0,0,-1,0,0,0,0,0,0": "Hz",
     "0,0,0,0,1,0,0,0,0": "degF",
-    "0,0,0,0,0,0,0,1,0": "deg"
-  }
+    "0,0,0,0,0,0,0,1,0": "deg",
+  },
 };
 
 const UNIT_SYMBOLS: Record<string, string> = {
   degC: "°C",
   degF: "°F",
   degR: "°R",
-  deg: "°"
+  deg: "°",
 };
 
 export function normalizeUnitToSystem(value: any, system: UnitSystem): any {
@@ -66,27 +72,50 @@ export function normalizeUnitToSystem(value: any, system: UnitSystem): any {
   }
 }
 
-export function formatUnit(
-  u: any,
+export function formatValueParts(
+  value: any,
   precision = 4,
   system: UnitSystem = "SI",
-  options: FormatUnitOptions = {}
-): string {
+  options: FormatUnitOptions = {},
+): FormattedValueParts {
   try {
-    if (typeof u === "number") return trimZeros(u.toFixed(precision));
-    if (isUnit(u)) {
-      const normalized = options.skipSystemConversion ? u : normalizeUnitToSystem(u, system);
-      const unitName = normalized.formatUnits();
-      const numeric = normalized.toNumber(unitName || "");
-      const displayUnit = UNIT_SYMBOLS[unitName] ?? unitName;
-      const valueText = trimZeros(numeric.toFixed(precision));
-      return displayUnit ? `${valueText} ${displayUnit}`.trim() : valueText;
+    if (typeof value === "number") {
+      const magnitude = trimZeros(value.toFixed(precision));
+      return { magnitude, unit: "", display: magnitude };
     }
-    if (u?.format) return u.format({ notation: "fixed", precision });
-    return String(u);
+    if (isUnit(value)) {
+      const normalized = options.skipSystemConversion ? value : normalizeUnitToSystem(value, system);
+      const rawUnitName = normalized.formatUnits();
+      const displayUnit = rawUnitName ? UNIT_SYMBOLS[rawUnitName] ?? rawUnitName : "";
+      let numeric: number;
+      if (rawUnitName) {
+        numeric = normalized.toNumber(rawUnitName);
+      } else {
+        numeric = normalized.toNumber();
+      }
+      const magnitude = trimZeros(numeric.toFixed(precision));
+      const display = displayUnit ? `${magnitude} ${displayUnit}`.trim() : magnitude;
+      return { magnitude, unit: displayUnit, display };
+    }
+    if (value?.format) {
+      const display = value.format({ notation: "fixed", precision });
+      return { magnitude: display, unit: "", display };
+    }
+    const display = String(value);
+    return { magnitude: display, unit: "", display };
   } catch {
-    return String(u);
+    const display = String(value);
+    return { magnitude: display, unit: "", display };
   }
+}
+
+export function formatUnit(
+  value: any,
+  precision = 4,
+  system: UnitSystem = "SI",
+  options: FormatUnitOptions = {},
+): string {
+  return formatValueParts(value, precision, system, options).display;
 }
 
 function isUnit(value: any): value is Unit {

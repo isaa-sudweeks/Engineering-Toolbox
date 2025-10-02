@@ -162,7 +162,75 @@ export default class EngineeringToolkitPlugin extends Plugin {
     }
   }
 
-  private async recalculateActiveNote() {
+  getGlobalVariables() {
+    return this.calc?.getGlobalVariables() ?? new Map();
+  }
+
+  async updateVariableAssignment(name: string, magnitude: string, unit: string, originalLine?: string): Promise<boolean> {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return false;
+    const editor = view.editor;
+    const lines = editor.getValue().split(/\r?\n/);
+
+    const tryUpdateLine = (lineIndex: number): boolean => {
+      const line = lines[lineIndex];
+      const eqIndex = line.indexOf("=");
+      if (eqIndex === -1) return false;
+      const beforeEq = line.slice(0, eqIndex + 1);
+      const afterEq = line.slice(eqIndex + 1);
+      const commentInfo = extractComment(afterEq);
+      const trimmedMagnitude = magnitude.trim();
+      if (!trimmedMagnitude) return false;
+      const trimmedUnit = unit.trim();
+      const valuePart = trimmedUnit ? `${trimmedMagnitude} ${trimmedUnit}` : trimmedMagnitude;
+      const newExpr = `${commentInfo.leading}${valuePart}`;
+      const newLine = `${beforeEq}${newExpr}${commentInfo.comment}`;
+      editor.replaceRange(newLine, { line: lineIndex, ch: 0 }, { line: lineIndex, ch: line.length });
+      return true;
+    };
+
+    const findLineInCalcBlocks = (predicate: (line: string) => boolean): number => {
+      let activeFence: string | null = null;
+      for (let i = 0; i < lines.length; i++) {
+        const rawLine = lines[i];
+        const trimmed = rawLine.trim();
+        if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+          if (activeFence === null) {
+            const fenceLang = trimmed.slice(3).trim().toLowerCase();
+            activeFence = fenceLang || "";
+          } else {
+            activeFence = null;
+          }
+          continue;
+        }
+        if (activeFence === "calc" && predicate(rawLine)) {
+          return i;
+        }
+      }
+      return -1;
+    };
+
+    const normalizedOriginal = originalLine?.trim();
+    let targetIndex = -1;
+    if (normalizedOriginal) {
+      targetIndex = findLineInCalcBlocks(line => line.trim() === normalizedOriginal);
+    }
+
+    if (targetIndex === -1) {
+      const nameRegex = new RegExp(`^\\s*${escapeRegExp(name)}\\s*=`, "i");
+      targetIndex = findLineInCalcBlocks(line => nameRegex.test(line));
+    }
+
+    if (targetIndex === -1) return false;
+
+    const updated = tryUpdateLine(targetIndex);
+    if (!updated) return false;
+
+    await this.recalculateActiveNote();
+    return true;
+  }
+
+  async recalculateActiveNote() {
     const file = this.app.workspace.getActiveFile();
     if (!file) return;
     this.calc.clearScope(file.path);
@@ -209,4 +277,27 @@ export default class EngineeringToolkitPlugin extends Plugin {
       modal.open();
     });
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractComment(rhs: string): { leading: string; comment: string } {
+  let body = rhs;
+  let comment = "";
+  const commentMarkers = ["//", "#"]; // preserve whichever comes first
+  let idx = -1;
+  for (const marker of commentMarkers) {
+    const markerIndex = body.indexOf(marker);
+    if (markerIndex !== -1 && (idx === -1 || markerIndex < idx)) {
+      idx = markerIndex;
+    }
+  }
+  if (idx !== -1) {
+    comment = body.slice(idx);
+    body = body.slice(0, idx);
+  }
+  const leading = body.match(/^\s*/)?.[0] ?? "";
+  return { leading, comment };
 }

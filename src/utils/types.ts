@@ -3,7 +3,10 @@ export type VarName = string;
 
 export interface VarEntry {
   value: any;
+  magnitude: string;
+  unit: string;
   display: string;
+  sourceLine?: string;
 }
 
 export interface NoteScope {
