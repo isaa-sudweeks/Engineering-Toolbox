@@ -1,6 +1,6 @@
 import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
-import type { ToolkitSettings, NoteScope } from "./utils/types";
+import type { ToolkitSettings, NoteScope, GlobalVarEntry, ToolkitData } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
 import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
@@ -10,11 +10,13 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
+  private loadedGlobalVars: Record<string, GlobalVarEntry> = {};
 
   async onload() {
     console.log("Loading Engineering Toolkit");
     await this.loadSettings();
     this.calc = new CalcEngine(this);
+    this.calc.loadGlobalVars(this.loadedGlobalVars);
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
 
@@ -75,11 +77,30 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const raw = (await this.loadData()) as Partial<ToolkitData> | undefined;
+    if (raw && "settings" in raw) {
+      this.settings = Object.assign({}, DEFAULT_SETTINGS, raw.settings ?? {});
+      this.loadedGlobalVars = raw.globalVars ?? {};
+    } else {
+      this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
+      const legacy = raw as any;
+      this.loadedGlobalVars = legacy?.globalVars ?? {};
+    }
   }
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.saveToolkitData();
   }
+
+  async saveToolkitData() {
+    const data: ToolkitData = {
+      settings: this.settings,
+      globalVars: this.calc ? this.calc.serializeGlobalVars() : this.loadedGlobalVars
+    };
+    this.loadedGlobalVars = data.globalVars;
+    await this.saveData(data);
+  }
+
+  getCalcEngine(): CalcEngine { return this.calc; }
 
   async prompt(message: string): Promise<string | null> {
     return new Promise(resolve => {

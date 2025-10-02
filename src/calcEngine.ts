@@ -1,12 +1,12 @@
 import { MarkdownPostProcessorContext } from "obsidian";
 import { math, formatUnit } from "./utils/format";
-import type { NoteScope, VarEntry } from "./utils/types";
+import type { GlobalVarEntry, NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
-  private globalVars = new Map<string, VarEntry>();
+  private globalVars = new Map<string, GlobalVarEntry>();
 
   constructor(plugin: EngineeringToolkitPlugin) { this.plugin = plugin; }
 
@@ -68,6 +68,77 @@ export class CalcEngine {
     }
     for (const [k, v] of scope.vars.entries()) mscope[k] = v.value;
     return math.evaluate(expr, mscope);
+  }
+
+  loadGlobalVars(entries: Record<string, GlobalVarEntry> = {}) {
+    this.globalVars.clear();
+    for (const [name, entry] of Object.entries(entries)) {
+      if (!entry || typeof entry !== "object") continue;
+      const source = entry.source ?? "";
+      let value = entry.value;
+      let display = entry.display ?? "";
+      if (source) {
+        try {
+          const ctx = this.buildGlobalEvalScope(name);
+          value = math.evaluate(source, ctx);
+          display = formatUnit(value, this.plugin.settings.sigFigs);
+        } catch (e) {
+          // fall back to persisted value/display if evaluation fails
+        }
+      }
+      if (!display && value !== undefined) {
+        try { display = formatUnit(value, this.plugin.settings.sigFigs); } catch (e) {}
+      }
+      this.globalVars.set(name, { value, display, source });
+    }
+  }
+
+  getGlobalVarsSnapshot(): Array<[string, GlobalVarEntry]> {
+    return Array.from(this.globalVars.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }
+
+  serializeGlobalVars(): Record<string, GlobalVarEntry> {
+    const out: Record<string, GlobalVarEntry> = {};
+    for (const [name, entry] of this.globalVars.entries()) {
+      out[name] = { ...entry, source: entry.source ?? "" };
+    }
+    return out;
+  }
+
+  async upsertGlobalVar(name: string, source: string): Promise<GlobalVarEntry> {
+    const trimmedName = name.trim();
+    const trimmedSource = source.trim();
+    if (!trimmedName) throw new Error("Name is required");
+    if (!this.isValidIdentifier(trimmedName)) throw new Error("Invalid variable name");
+    if (!trimmedSource) throw new Error("Expression is required");
+
+    const context = this.buildGlobalEvalScope(trimmedName);
+    const value = math.evaluate(trimmedSource, context);
+    const display = formatUnit(value, this.plugin.settings.sigFigs);
+    const entry: GlobalVarEntry = { value, display, source: trimmedSource };
+    this.globalVars.set(trimmedName, entry);
+    await this.plugin.saveToolkitData();
+    return entry;
+  }
+
+  async deleteGlobalVar(name: string): Promise<void> {
+    const trimmedName = name.trim();
+    if (!this.globalVars.has(trimmedName)) return;
+    this.globalVars.delete(trimmedName);
+    await this.plugin.saveToolkitData();
+  }
+
+  private buildGlobalEvalScope(skip?: string): Record<string, any> {
+    const scope: Record<string, any> = {};
+    for (const [k, v] of this.globalVars.entries()) {
+      if (skip && k === skip) continue;
+      scope[k] = v.value;
+    }
+    return scope;
+  }
+
+  private isValidIdentifier(name: string) {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
   }
 }
 

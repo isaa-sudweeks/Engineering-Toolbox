@@ -4,10 +4,15 @@ export type VarName = string;
 export interface VarEntry {
   value: any;
   display: string;
+  source?: string;
 }
 
 export interface NoteScope {
   vars: Map<VarName, VarEntry>;
+}
+
+export interface GlobalVarEntry extends VarEntry {
+  source: string;
 }
 
 export interface ToolkitSettings {
@@ -16,4 +21,9 @@ export interface ToolkitSettings {
   sigFigs: number;
   labNotesFolder: string;
   globalVarsEnabled: boolean;
+}
+
+export interface ToolkitData {
+  settings: ToolkitSettings;
+  globalVars: Record<VarName, GlobalVarEntry>;
 }
