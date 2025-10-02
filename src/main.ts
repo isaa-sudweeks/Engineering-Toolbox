@@ -1,4 +1,4 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf, Editor } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
@@ -45,6 +45,22 @@ export default class EngineeringToolkitPlugin extends Plugin {
       id: "new-experiment-note",
       name: "New Experiment Note",
       callback: async () => { await createExperimentNote(this); }
+    });
+
+    this.addCommand({
+      id: "insert-unit-conversion",
+      name: "Insert unit conversion",
+      editorCallback: async (editor: Editor) => {
+        const source = await this.prompt("Enter value and unit to convert (e.g., 5 m)");
+        if (!source) return;
+        const target = await this.prompt("Enter target unit (e.g., ft)");
+        if (!target) return;
+
+        const cursor = editor.getCursor();
+        const line = `${source.trim()} -> ${target.trim()}`;
+        editor.replaceRange(`${line}\n`, cursor);
+        editor.setCursor({ line: cursor.line + 1, ch: 0 });
+      }
     });
 
     this.registerEvent(this.app.workspace.on("file-open", async (f) => {
