@@ -1,4 +1,4 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf, MarkdownView, Notice } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
@@ -10,6 +10,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private calc: CalcEngine;
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
+  public modelViewerAvailable = false;
 
   async onload() {
     console.log("Loading Engineering Toolkit");
@@ -17,6 +18,8 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.calc = new CalcEngine(this);
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
+
+    this.refreshModelViewerAvailability(true);
 
     this.registerView(VIEW_TYPE_VARS, (leaf) => new VariablesView(leaf, this));
     this.addCommand({
@@ -47,6 +50,12 @@ export default class EngineeringToolkitPlugin extends Plugin {
       callback: async () => { await createExperimentNote(this); }
     });
 
+    this.addCommand({
+      id: "insert-model-viewer-embed",
+      name: "Insert Model Viewer embed",
+      callback: async () => { await this.handleInsertModelViewerCommand(); }
+    });
+
     this.registerEvent(this.app.workspace.on("file-open", async (f) => {
       if (!f) return;
       this.refreshVariablesView(null);
@@ -75,10 +84,74 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+    this.settings.modelViewerDefaults = Object.assign(
+      {},
+      DEFAULT_SETTINGS.modelViewerDefaults,
+      (data as Partial<ToolkitSettings> | null)?.modelViewerDefaults ?? {}
+    );
   }
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  refreshModelViewerAvailability(showNotice = false) {
+    this.modelViewerAvailable = this.isModelViewerPluginAvailable();
+    if (!this.modelViewerAvailable && showNotice) {
+      new Notice("Model Viewer plugin not detected. Install and enable it to render inserted 3D models.");
+    }
+    return this.modelViewerAvailable;
+  }
+
+  private isModelViewerPluginAvailable(): boolean {
+    const manager = (this.app as any).plugins;
+    if (!manager) return false;
+    const ids = ["model-viewer", "obsidian-model-viewer"];
+    return ids.some((id) => manager.enabledPlugins?.has(id) || manager.getPlugin?.(id));
+  }
+
+  private async handleInsertModelViewerCommand() {
+    if (!this.refreshModelViewerAvailability(true)) return;
+
+    const src = (await this.prompt("Enter model file path or URL"))?.trim();
+    if (!src) {
+      new Notice("Model source is required to insert a viewer embed.");
+      return;
+    }
+
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.editor) {
+      new Notice("Open a Markdown note to insert a Model Viewer embed.");
+      return;
+    }
+
+    const editor = view.editor;
+    const markup = this.buildModelViewerMarkup(src);
+    const prefix = editor.getCursor("from").ch > 0 ? "\n" : "";
+    editor.replaceSelection(`${prefix}${markup}\n`);
+  }
+
+  private buildModelViewerMarkup(src: string): string {
+    const defaults = this.settings.modelViewerDefaults;
+    const attrParts: string[] = [`src="${src}"`];
+    if (defaults.altText?.trim()) attrParts.push(`alt="${defaults.altText.trim()}"`);
+    if (defaults.cameraControls) attrParts.push("camera-controls");
+    if (defaults.autoRotate) attrParts.push("auto-rotate");
+    if (defaults.environmentImage?.trim()) {
+      attrParts.push(`environment-image="${defaults.environmentImage.trim()}"`);
+    }
+    if (defaults.exposure?.trim()) {
+      attrParts.push(`exposure="${defaults.exposure.trim()}"`);
+    }
+
+    const styles: string[] = [];
+    if (defaults.backgroundColor?.trim()) {
+      styles.push(`background-color: ${defaults.backgroundColor.trim()};`);
+    }
+
+    const styleAttr = styles.length ? ` style="${styles.join(" ")}"` : "";
+    return `<model-viewer ${attrParts.join(" ")}${styleAttr}></model-viewer>`;
   }
 
   async prompt(message: string): Promise<string | null> {
