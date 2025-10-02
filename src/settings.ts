@@ -17,6 +17,10 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   labNoteTemplate: DEFAULT_LAB_NOTE_TEMPLATE,
   labNoteTemplatePresetId: DEFAULT_LAB_NOTE_TEMPLATE_ID,
   globalVarsEnabled: false,
+  variablesPanelEnabled: true,
+  labJournalEnabled: true,
+  diagramHelpersEnabled: true,
+  modelEmbedsEnabled: true,
   latexFormatting: true,
   modelViewerDefaults: {
     altText: "3D model",
@@ -231,6 +235,56 @@ export class ToolkitSettingTab extends PluginSettingTab {
 
     globalsSection = containerEl.createEl("div", { cls: "global-vars-section" });
     renderGlobals();
+
+    containerEl.createEl("h3", { text: "Optional modules" });
+
+    new Setting(containerEl)
+      .setName("Variables panel")
+      .setDesc("Enable the right-side variables view and related refresh events")
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.variablesPanelEnabled)
+          .onChange(async v => {
+            this.plugin.settings.variablesPanelEnabled = v;
+            await this.plugin.saveSettings();
+            await this.plugin.applyFeatureToggles();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Lab journal helpers")
+      .setDesc("Offer commands that scaffold experiment notes")
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.labJournalEnabled)
+          .onChange(async v => {
+            this.plugin.settings.labJournalEnabled = v;
+            await this.plugin.saveSettings();
+            await this.plugin.applyFeatureToggles();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Diagram helpers")
+      .setDesc("Expose commands that prepare diagram placeholders")
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.diagramHelpersEnabled)
+          .onChange(async v => {
+            this.plugin.settings.diagramHelpersEnabled = v;
+            await this.plugin.saveSettings();
+            await this.plugin.applyFeatureToggles();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Model embeds")
+      .setDesc("Allow inserting <model-viewer> helpers and related defaults")
+      .addToggle(t =>
+        t.setValue(this.plugin.settings.modelEmbedsEnabled)
+          .onChange(async v => {
+            this.plugin.settings.modelEmbedsEnabled = v;
+            await this.plugin.saveSettings();
+            await this.plugin.applyFeatureToggles();
+          })
+      );
 
     containerEl.createEl("h3", { text: "Export" });
 

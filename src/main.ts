@@ -159,7 +159,13 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.addCommand({
       id: "new-experiment-note",
       name: "New Experiment Note",
-      callback: async () => { await createExperimentNote(this); }
+      callback: async () => {
+        if (!this.settings.labJournalEnabled) {
+          new Notice("Lab journal helpers are disabled in settings.");
+          return;
+        }
+        await createExperimentNote(this);
+      }
     });
 
     this.addCommand({
@@ -211,9 +217,15 @@ export default class EngineeringToolkitPlugin extends Plugin {
       if (!f) return;
       this.refreshVariablesView(null);
     }));
+
+    await this.applyFeatureToggles();
   }
 
   async openVariablesView() {
+    if (!this.settings.variablesPanelEnabled) {
+      new Notice("Variables panel is disabled in settings.");
+      return;
+    }
     if (!this.varsLeaf || this.varsLeaf?.getViewState().type !== VIEW_TYPE_VARS) {
       this.varsLeaf = this.app.workspace.getRightLeaf(false);
       await this.varsLeaf.setViewState({ type: VIEW_TYPE_VARS, active: true });
@@ -223,6 +235,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
 
   refreshVariablesView(scope: NoteScope | null) {
+    if (!this.settings.variablesPanelEnabled) return;
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_VARS);
     for (const leaf of leaves) {
       (leaf.view as VariablesView).renderScope(scope || undefined);
@@ -234,6 +247,10 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
 
   private async insertDiagramFlow(preselectedKey?: string) {
+    if (!this.settings.diagramHelpersEnabled) {
+      new Notice("Diagram helpers are disabled in settings.");
+      return;
+    }
     const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
     if (!editor) {
       new Notice("Open a Markdown note before inserting a diagram placeholder.");
@@ -368,6 +385,10 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
 
   private async handleInsertModelViewerCommand() {
+    if (!this.settings.modelEmbedsEnabled) {
+      new Notice("Model embeds are disabled in settings.");
+      return;
+    }
     if (!this.refreshModelViewerAvailability(true)) return;
 
     const src = (await this.prompt("Enter model file path or URL"))?.trim();
@@ -510,6 +531,18 @@ export default class EngineeringToolkitPlugin extends Plugin {
       DEFAULT_SETTINGS.modelViewerDefaults,
       this.settings.modelViewerDefaults ?? {},
     );
+    if (typeof this.settings.variablesPanelEnabled !== "boolean") {
+      this.settings.variablesPanelEnabled = DEFAULT_SETTINGS.variablesPanelEnabled;
+    }
+    if (typeof this.settings.labJournalEnabled !== "boolean") {
+      this.settings.labJournalEnabled = DEFAULT_SETTINGS.labJournalEnabled;
+    }
+    if (typeof this.settings.diagramHelpersEnabled !== "boolean") {
+      this.settings.diagramHelpersEnabled = DEFAULT_SETTINGS.diagramHelpersEnabled;
+    }
+    if (typeof this.settings.modelEmbedsEnabled !== "boolean") {
+      this.settings.modelEmbedsEnabled = DEFAULT_SETTINGS.modelEmbedsEnabled;
+    }
     if (!this.settings.labIndexPath) {
       this.settings.labIndexPath = DEFAULT_SETTINGS.labIndexPath;
     }
@@ -525,6 +558,13 @@ export default class EngineeringToolkitPlugin extends Plugin {
   }
   async saveSettings() {
     await this.saveToolkitData();
+  }
+
+  async applyFeatureToggles() {
+    if (!this.settings.variablesPanelEnabled) {
+      this.app.workspace.getLeavesOfType(VIEW_TYPE_VARS).forEach(leaf => leaf.detach());
+      this.varsLeaf = null;
+    }
   }
 
   async saveToolkitData() {

@@ -102,3 +102,7 @@ If the related plugin is not available, the command exits with a notice so you c
 - Significant figures
 - Lab notes folder
 - Global variables (experimental)
+- Variables panel toggle
+- Lab journal helpers toggle
+- Diagram helpers toggle
+- Model embeds toggle

@@ -36,6 +36,10 @@ export interface ToolkitSettings {
   labNoteTemplate: string;
   labNoteTemplatePresetId: string;
   globalVarsEnabled: boolean;
+  variablesPanelEnabled: boolean;
+  labJournalEnabled: boolean;
+  diagramHelpersEnabled: boolean;
+  modelEmbedsEnabled: boolean;
   latexFormatting: boolean;
   modelViewerDefaults: ModelViewerDefaults;
   exportFormat: "script" | "notebook";
