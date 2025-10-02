@@ -1,13 +1,43 @@
 import { MarkdownPostProcessorContext } from "obsidian";
-import { math, formatUnit, formatUnitLatex, escapeLatex } from "./utils/format";
+import {
+  math,
+  formatUnit,
+  formatUnitLatex,
+  escapeLatex,
+  normalizeUnitToSystem,
+} from "./utils/format";
+import type { UnitSystem } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
 type LineResult =
   | { kind: "comment"; text: string; plain: string }
-  | { kind: "assignment"; name: string; expr: string; value: any; display: string; plain: string }
-  | { kind: "conversion"; expr: string; target: string; value: any; display: string; plain: string }
-  | { kind: "expression"; expr: string; value: any; display: string; plain: string };
+  | {
+      kind: "assignment";
+      name: string;
+      expr: string;
+      value: any;
+      displayValue: any;
+      display: string;
+      plain: string;
+    }
+  | {
+      kind: "conversion";
+      expr: string;
+      target: string;
+      value: any;
+      displayValue: any;
+      display: string;
+      plain: string;
+    }
+  | {
+      kind: "expression";
+      expr: string;
+      value: any;
+      displayValue: any;
+      display: string;
+      plain: string;
+    };
 
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
@@ -30,7 +60,7 @@ export class CalcEngine {
     if (this.plugin.settings.autoRecalc) this.clearScope(filePath);
     const scope = this.getScope(filePath);
     const useLatex = this.plugin.settings.latexFormatting;
-
+    const system = this.plugin.settings.defaultUnitSystem;
     const lines = source.split(/\r?\n/);
     for (const raw of lines) {
       const line = raw.trim();
@@ -38,7 +68,7 @@ export class CalcEngine {
       const row = document.createElement("div");
       row.classList.add("calc-line");
       try {
-        const result = this.evaluateLine(line, scope);
+        const result = this.evaluateLine(line, scope, system);
         row.dataset.plain = result.plain;
         if (result.kind === "comment") {
           const comment = document.createElement("span");
@@ -50,7 +80,7 @@ export class CalcEngine {
             const latex = buildAssignmentLatex(
               result.name,
               result.expr,
-              result.value,
+              result.displayValue,
               this.plugin.settings.sigFigs,
             );
             appendLatex(row, latex);
@@ -68,7 +98,7 @@ export class CalcEngine {
             const latex = buildConversionLatex(
               result.expr,
               result.target,
-              result.value,
+              result.displayValue,
               this.plugin.settings.sigFigs,
             );
             appendLatex(row, latex);
@@ -82,7 +112,7 @@ export class CalcEngine {
           if (useLatex) {
             const latex = buildExpressionLatex(
               result.expr,
-              result.value,
+              result.displayValue,
               this.plugin.settings.sigFigs,
             );
             appendLatex(row, latex);
@@ -112,9 +142,10 @@ export class CalcEngine {
 
     const filePath = ctx.sourcePath || "untitled";
     const scope = this.getScope(filePath);
+    const system = this.plugin.settings.defaultUnitSystem;
 
     try {
-      const result = this.evaluateLine(statement, scope);
+      const result = this.evaluateLine(statement, scope, system);
       if (result.kind === "assignment") {
         const lhs = document.createElement("span");
         lhs.classList.add("lhs");
@@ -154,35 +185,53 @@ export class CalcEngine {
     return math.evaluate(expr, mscope);
   }
 
-  private evaluateLine(line: string, scope: NoteScope): LineResult {
+  private evaluateLine(line: string, scope: NoteScope, system: UnitSystem): LineResult {
     if (line.startsWith("//") || line.startsWith("#")) {
       return { kind: "comment", text: line, plain: line };
     }
     if (isAssignment(line)) {
       const { name, expr } = splitAssignment(line);
       const value = this.evalExpression(expr, scope);
-      const display = formatUnit(value, this.plugin.settings.sigFigs);
+      const displayValue = normalizeUnitToSystem(value, system);
+      const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
       scope.vars.set(name, { value, display });
-      return { kind: "assignment", name, expr, value, display, plain: `${name} = ${display}` };
+      return {
+        kind: "assignment",
+        name,
+        expr,
+        value,
+        displayValue,
+        display,
+        plain: `${name} = ${display}`,
+      };
     }
     if (isConvert(line)) {
       const { expr, target } = splitConvert(line);
       const v = this.evalExpression(expr, scope);
       let converted = v;
       if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-      const display = formatUnit(converted, this.plugin.settings.sigFigs);
+      const display = formatUnit(converted, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
       return {
         kind: "conversion",
         expr,
         target,
         value: converted,
+        displayValue: converted,
         display,
         plain: `${expr} → ${target} = ${display}`,
       };
     }
     const value = this.evalExpression(line, scope);
-    const display = formatUnit(value, this.plugin.settings.sigFigs);
-    return { kind: "expression", expr: line, value, display, plain: `${line} = ${display}` };
+    const displayValue = normalizeUnitToSystem(value, system);
+    const display = formatUnit(displayValue, this.plugin.settings.sigFigs, system, { skipSystemConversion: true });
+    return {
+      kind: "expression",
+      expr: line,
+      value,
+      displayValue,
+      display,
+      plain: `${line} = ${display}`,
+    };
   }
 }
 
