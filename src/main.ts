@@ -1,9 +1,10 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf, MarkdownView } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
 import { VariablesView, VIEW_TYPE_VARS } from "./variablesView";
 import { createExperimentNote } from "./labJournal";
+import { UnitPickerModal } from "./unitPicker";
 
 export default class EngineeringToolkitPlugin extends Plugin {
   settings: ToolkitSettings;
@@ -47,6 +48,15 @@ export default class EngineeringToolkitPlugin extends Plugin {
       callback: async () => { await createExperimentNote(this); }
     });
 
+    this.addCommand({
+      id: "open-unit-picker",
+      name: "Insert Unit from Picker",
+      callback: () => {
+        const modal = new UnitPickerModal(this);
+        modal.open();
+      }
+    });
+
     this.registerEvent(this.app.workspace.on("file-open", async (f) => {
       if (!f) return;
       this.refreshVariablesView(null);
@@ -72,6 +82,13 @@ export default class EngineeringToolkitPlugin extends Plugin {
   async onunload() {
     console.log("Unloading Engineering Toolkit");
     this.app.workspace.getLeavesOfType(VIEW_TYPE_VARS).forEach(l => l.detach());
+  }
+
+  insertUnitIntoActiveEditor(unit: string): boolean {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return false;
+    view.editor.replaceSelection(unit);
+    return true;
   }
 
   async loadSettings() {
