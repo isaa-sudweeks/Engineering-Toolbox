@@ -75,6 +75,7 @@ Expected outputs (rounded to 4 sig figs) are:
 ## Commands
 - **Open Variables Panel**
 - **Recalculate current note**
+- **Reset current note scope**
 - **New Experiment Note** (creates a scaffolded lab note under configured folder)
 - **Insert engineering diagram** (choose a diagram plugin integration and insert an embed)
 - **Insert Excalidraw sketch / Diagrams.net drawing / Circuit sketch** (quick commands for specific diagram types)
@@ -97,7 +98,7 @@ When you run the command, the plugin will prompt for:
 If the related plugin is not available, the command exits with a notice so you can install/enable it before retrying.
 
 ## Settings
-- Auto recalc
+- Auto recalc (disable for manual mode; existing variables persist until you reset the scope)
 - Default unit system (display preference)
 - Significant figures
 - Lab notes folder
@@ -106,3 +107,7 @@ If the related plugin is not available, the command exits with a notice so you c
 - Lab journal helpers toggle
 - Diagram helpers toggle
 - Model embeds toggle
+
+### Manual mode
+When **Auto recalc** is turned off, the plugin leaves previously calculated variables in place so you can selectively re-run calculations without losing context.
+Use the **Reset current note scope** command whenever you want to clear the stored variables for a note and start fresh.

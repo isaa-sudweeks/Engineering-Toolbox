@@ -144,6 +144,22 @@ export default class EngineeringToolkitPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "reset-current-scope",
+      name: "Reset current note scope",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Open a note before resetting the scope.");
+          return;
+        }
+        this.calc.clearScope(file.path);
+        this.currentScope = null;
+        this.refreshVariablesView(null);
+        new Notice("Cleared stored variables for this note.");
+      }
+    });
+
+    this.addCommand({
       id: "toggle-auto-recalc",
       name: "Toggle auto recalc",
       callback: async () => {
@@ -154,6 +170,18 @@ export default class EngineeringToolkitPlugin extends Plugin {
           ? "Calculations will refresh automatically."
           : "Existing results will persist until you manually recalculate.";
         new Notice(`Auto recalc ${mode}. ${extra}`);
+      }
+    });
+
+    this.addCommand({
+      id: "reset-current-scope",
+      name: "Reset current note scope",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) return;
+        this.calc.clearScope(file.path);
+        this.currentScope = null;
+        this.refreshVariablesView(null);
       }
     });
 

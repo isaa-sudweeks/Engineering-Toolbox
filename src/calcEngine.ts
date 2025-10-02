@@ -88,6 +88,7 @@ export class CalcEngine {
   }
 
   clearScope(filePath: string) { this.scopes.delete(filePath); }
+  clearAllScopes() { this.scopes.clear(); }
 
   async evaluateBlock(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
     const container = document.createElement("div");
