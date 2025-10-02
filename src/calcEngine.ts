@@ -21,7 +21,7 @@ export class CalcEngine {
     container.classList.add("calc-output");
 
     const filePath = ctx.sourcePath || "untitled";
-    if (!this.plugin.settings.autoRecalc) this.clearScope(filePath);
+    if (this.plugin.settings.autoRecalc) this.clearScope(filePath);
     const scope = this.getScope(filePath);
 
     const lines = source.split(/\r?\n/);

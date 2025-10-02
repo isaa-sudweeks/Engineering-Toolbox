@@ -1,4 +1,4 @@
-import { Plugin, MarkdownPostProcessorContext, WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, ToolkitSettingTab } from "./settings";
 import type { ToolkitSettings, NoteScope } from "./utils/types";
 import { CalcEngine } from "./calcEngine";
@@ -35,9 +35,20 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.addCommand({
       id: "recalculate-note",
       name: "Recalculate current note",
+      callback: async () => { await this.recalculateActiveNote(); }
+    });
+
+    this.addCommand({
+      id: "toggle-auto-recalc",
+      name: "Toggle auto recalc",
       callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (file) await this.app.workspace.getLeaf(false).openFile(file);
+        this.settings.autoRecalc = !this.settings.autoRecalc;
+        await this.saveSettings();
+        const mode = this.settings.autoRecalc ? "enabled" : "disabled";
+        const extra = this.settings.autoRecalc
+          ? "Calculations will refresh automatically."
+          : "Existing results will persist until you manually recalculate.";
+        new Notice(`Auto recalc ${mode}. ${extra}`);
       }
     });
 
@@ -67,6 +78,13 @@ export default class EngineeringToolkitPlugin extends Plugin {
     for (const leaf of leaves) {
       (leaf.view as VariablesView).renderScope(scope || undefined);
     }
+  }
+
+  private async recalculateActiveNote() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) return;
+    this.calc.clearScope(file.path);
+    await this.app.workspace.getLeaf(false).openFile(file);
   }
 
   async onunload() {
