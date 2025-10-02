@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   defaultUnitSystem: "SI",
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
+  labIndexPath: "Lab Journal/index.md",
   globalVarsEnabled: false
 };
 
@@ -49,6 +50,16 @@ export class ToolkitSettingTab extends PluginSettingTab {
       .addText(t => t.setPlaceholder("Lab Journal")
         .setValue(this.plugin.settings.labNotesFolder)
         .onChange(async v => { this.plugin.settings.labNotesFolder = v || "Lab Journal"; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName("Lab index")
+      .setDesc("Path to an index note or folder for experiment listings")
+      .addText(t => t.setPlaceholder("Lab Journal/index.md")
+        .setValue(this.plugin.settings.labIndexPath)
+        .onChange(async v => {
+          this.plugin.settings.labIndexPath = v?.trim() || "";
+          await this.plugin.saveSettings();
+        }));
 
     new Setting(containerEl)
       .setName("Global variables")
