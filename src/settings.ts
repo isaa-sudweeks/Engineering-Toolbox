@@ -7,7 +7,8 @@ export const DEFAULT_SETTINGS: ToolkitSettings = {
   defaultUnitSystem: "SI",
   sigFigs: 4,
   labNotesFolder: "Lab Journal",
-  globalVarsEnabled: false
+  globalVarsEnabled: false,
+  latexFormatting: true
 };
 
 export class ToolkitSettingTab extends PluginSettingTab {
@@ -55,5 +56,11 @@ export class ToolkitSettingTab extends PluginSettingTab {
       .setDesc("Make variables available across notes (experimental)")
       .addToggle(t => t.setValue(this.plugin.settings.globalVarsEnabled)
         .onChange(async v => { this.plugin.settings.globalVarsEnabled = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName("LaTeX formatting")
+      .setDesc("Render calculator results with MathJax (disable for plain text)")
+      .addToggle(t => t.setValue(this.plugin.settings.latexFormatting)
+        .onChange(async v => { this.plugin.settings.latexFormatting = v; await this.plugin.saveSettings(); }));
   }
 }
