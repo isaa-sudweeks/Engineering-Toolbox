@@ -12,6 +12,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
   private varsLeaf: WorkspaceLeaf | null = null;
   private currentScope: NoteScope | null = null;
   private loadedGlobalVars: Record<string, GlobalVarEntry> = {};
+  public modelViewerAvailable = false;
   private diagramIntegrations: DiagramIntegration[] = [
     {
       key: "excalidraw",
@@ -52,6 +53,7 @@ export default class EngineeringToolkitPlugin extends Plugin {
     await this.loadSettings();
     this.calc = new CalcEngine(this);
     this.calc.loadGlobalVars(this.loadedGlobalVars);
+    this.refreshModelViewerAvailability(true);
 
     this.addSettingTab(new ToolkitSettingTab(this.app, this));
 
@@ -189,6 +191,12 @@ export default class EngineeringToolkitPlugin extends Plugin {
         callback: async () => { await this.insertDiagramFlow(integration.key); }
       });
     }
+
+    this.addCommand({
+      id: "insert-model-viewer-embed",
+      name: "Insert Model Viewer embed",
+      callback: async () => { await this.handleInsertModelViewerCommand(); }
+    });
 
     this.registerEvent(this.app.workspace.on("file-open", async (f) => {
       if (!f) return;
@@ -335,6 +343,65 @@ export default class EngineeringToolkitPlugin extends Plugin {
     return path;
   }
 
+  refreshModelViewerAvailability(showNotice = false) {
+    this.modelViewerAvailable = this.isModelViewerPluginAvailable();
+    if (!this.modelViewerAvailable && showNotice) {
+      new Notice("Model Viewer plugin not detected. Install and enable it to render inserted 3D models.");
+    }
+    return this.modelViewerAvailable;
+  }
+
+  private isModelViewerPluginAvailable(): boolean {
+    const manager = (this.app as any).plugins;
+    if (!manager) return false;
+    const ids = ["model-viewer", "obsidian-model-viewer"];
+    return ids.some(id => manager.enabledPlugins?.has(id) || manager.getPlugin?.(id));
+  }
+
+  private async handleInsertModelViewerCommand() {
+    if (!this.refreshModelViewerAvailability(true)) return;
+
+    const src = (await this.prompt("Enter model file path or URL"))?.trim();
+    if (!src) {
+      new Notice("Model source is required to insert a viewer embed.");
+      return;
+    }
+
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view || !view.editor) {
+      new Notice("Open a Markdown note to insert a Model Viewer embed.");
+      return;
+    }
+
+    const editor = view.editor;
+    const markup = this.buildModelViewerMarkup(src);
+    const needsLeadingNewline = editor.getCursor("from").ch > 0;
+    const prefix = needsLeadingNewline ? "\n" : "";
+    editor.replaceSelection(`${prefix}${markup}\n`);
+  }
+
+  private buildModelViewerMarkup(src: string): string {
+    const defaults = this.settings.modelViewerDefaults;
+    const attrParts: string[] = [`src="${src}"`];
+    if (defaults.altText?.trim()) attrParts.push(`alt="${defaults.altText.trim()}"`);
+    if (defaults.cameraControls) attrParts.push("camera-controls");
+    if (defaults.autoRotate) attrParts.push("auto-rotate");
+    if (defaults.environmentImage?.trim()) {
+      attrParts.push(`environment-image="${defaults.environmentImage.trim()}"`);
+    }
+    if (defaults.exposure?.trim()) {
+      attrParts.push(`exposure="${defaults.exposure.trim()}"`);
+    }
+
+    const styles: string[] = [];
+    if (defaults.backgroundColor?.trim()) {
+      styles.push(`background-color: ${defaults.backgroundColor.trim()};`);
+    }
+
+    const styleAttr = styles.length ? ` style="${styles.join(" ")}"` : "";
+    return `<model-viewer ${attrParts.join(" ")}${styleAttr}></model-viewer>`;
+  }
+
   async updateVariableAssignment(name: string, magnitude: string, unit: string, originalLine?: string): Promise<boolean> {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) return false;
@@ -427,6 +494,15 @@ export default class EngineeringToolkitPlugin extends Plugin {
       this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
       const legacy = raw as any;
       this.loadedGlobalVars = legacy?.globalVars ?? {};
+    }
+
+    this.settings.modelViewerDefaults = Object.assign(
+      {},
+      DEFAULT_SETTINGS.modelViewerDefaults,
+      this.settings.modelViewerDefaults ?? {},
+    );
+    if (typeof this.settings.latexFormatting !== "boolean") {
+      this.settings.latexFormatting = DEFAULT_SETTINGS.latexFormatting;
     }
   }
   async saveSettings() {

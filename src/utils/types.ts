@@ -14,6 +14,15 @@ export interface NoteScope {
   vars: Map<VarName, VarEntry>;
 }
 
+export interface ModelViewerDefaults {
+  altText: string;
+  cameraControls: boolean;
+  autoRotate: boolean;
+  backgroundColor: string;
+  environmentImage: string;
+  exposure: string;
+}
+
 export interface GlobalVarEntry extends VarEntry {
   source: string;
 }
@@ -25,6 +34,7 @@ export interface ToolkitSettings {
   labNotesFolder: string;
   globalVarsEnabled: boolean;
   latexFormatting: boolean;
+  modelViewerDefaults: ModelViewerDefaults;
 }
 
 export interface ToolkitData {
