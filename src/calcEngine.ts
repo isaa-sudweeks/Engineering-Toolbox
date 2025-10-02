@@ -3,6 +3,12 @@ import { math, formatUnit } from "./utils/format";
 import type { NoteScope, VarEntry } from "./utils/types";
 import type EngineeringToolkitPlugin from "./main";
 
+type LineResult =
+  | { kind: "comment"; text: string }
+  | { kind: "assignment"; name: string; display: string }
+  | { kind: "conversion"; expr: string; target: string; display: string }
+  | { kind: "expression"; display: string };
+
 export class CalcEngine {
   private plugin: EngineeringToolkitPlugin;
   private scopes = new Map<string, NoteScope>();
@@ -31,25 +37,15 @@ export class CalcEngine {
       const row = document.createElement("div");
       row.classList.add("calc-line");
       try {
-        if (line.startsWith("//") || line.startsWith("#")) {
-          row.innerHTML = `<span class="calc-comment">${escapeHtml(line)}</span>`;
-        } else if (isAssignment(line)) {
-          const { name, expr } = splitAssignment(line);
-          const value = this.evalExpression(expr, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          scope.vars.set(name, { value, display });
-          row.innerHTML = `<span class="lhs">${escapeHtml(name)}</span><span class="rhs">= ${display}</span>`;
-        } else if (isConvert(line)) {
-          const { expr, target } = splitConvert(line);
-          const v = this.evalExpression(expr, scope);
-          let converted = v;
-          if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
-          const display = formatUnit(converted, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${escapeHtml(expr)} → ${escapeHtml(target)} = ${display}</span>`;
+        const result = this.evaluateLine(line, scope);
+        if (result.kind === "comment") {
+          row.innerHTML = `<span class="calc-comment">${escapeHtml(result.text)}</span>`;
+        } else if (result.kind === "assignment") {
+          row.innerHTML = `<span class="lhs">${escapeHtml(result.name)}</span><span class="rhs">= ${result.display}</span>`;
+        } else if (result.kind === "conversion") {
+          row.innerHTML = `<span class="rhs">${escapeHtml(result.expr)} → ${escapeHtml(result.target)} = ${result.display}</span>`;
         } else {
-          const value = this.evalExpression(line, scope);
-          const display = formatUnit(value, this.plugin.settings.sigFigs);
-          row.innerHTML = `<span class="rhs">${display}</span>`;
+          row.innerHTML = `<span class="rhs">${result.display}</span>`;
         }
       } catch (e: any) {
         row.classList.add("calc-error");
@@ -61,6 +57,48 @@ export class CalcEngine {
     return container;
   }
 
+  async evaluateInline(source: string, ctx: MarkdownPostProcessorContext): Promise<HTMLElement> {
+    const span = document.createElement("span");
+    span.classList.add("calc-inline");
+
+    const statement = source.trim();
+    if (!statement) return span;
+
+    const filePath = ctx.sourcePath || "untitled";
+    const scope = this.getScope(filePath);
+
+    try {
+      const result = this.evaluateLine(statement, scope);
+      if (result.kind === "assignment") {
+        const lhs = document.createElement("span");
+        lhs.classList.add("lhs");
+        lhs.textContent = result.name;
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.append(lhs, rhs);
+      } else if (result.kind === "conversion") {
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.appendChild(rhs);
+      } else if (result.kind === "expression") {
+        const rhs = document.createElement("span");
+        rhs.classList.add("rhs");
+        rhs.textContent = `= ${result.display}`;
+        span.appendChild(rhs);
+      } else {
+        span.textContent = statement;
+      }
+    } catch (e: any) {
+      span.classList.add("calc-inline-error");
+      span.textContent = `Error: ${e?.message ?? String(e)}`;
+    }
+
+    this.plugin.refreshVariablesView(scope);
+    return span;
+  }
+
   private evalExpression(expr: string, scope: NoteScope): any {
     const mscope: Record<string, any> = {};
     if (this.plugin.settings.globalVarsEnabled) {
@@ -68,6 +106,30 @@ export class CalcEngine {
     }
     for (const [k, v] of scope.vars.entries()) mscope[k] = v.value;
     return math.evaluate(expr, mscope);
+  }
+
+  private evaluateLine(line: string, scope: NoteScope): LineResult {
+    if (line.startsWith("//") || line.startsWith("#")) {
+      return { kind: "comment", text: line };
+    }
+    if (isAssignment(line)) {
+      const { name, expr } = splitAssignment(line);
+      const value = this.evalExpression(expr, scope);
+      const display = formatUnit(value, this.plugin.settings.sigFigs);
+      scope.vars.set(name, { value, display });
+      return { kind: "assignment", name, display };
+    }
+    if (isConvert(line)) {
+      const { expr, target } = splitConvert(line);
+      const v = this.evalExpression(expr, scope);
+      let converted = v;
+      if (typeof (v as any)?.to === "function") converted = (v as any).to(target);
+      const display = formatUnit(converted, this.plugin.settings.sigFigs);
+      return { kind: "conversion", expr, target, display };
+    }
+    const value = this.evalExpression(line, scope);
+    const display = formatUnit(value, this.plugin.settings.sigFigs);
+    return { kind: "expression", display };
   }
 }
 

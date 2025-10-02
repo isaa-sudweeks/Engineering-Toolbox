@@ -28,8 +28,64 @@ export default class EngineeringToolkitPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor("calc", async (source, el, ctx) => {
       const out = await this.calc.evaluateBlock(source, ctx);
       el.appendChild(out);
-      this.currentScope = (this.calc as any)["getScope"](ctx.sourcePath);
-      this.refreshVariablesView(this.currentScope!);
+      const scope = this.calc.getScope(ctx.sourcePath || "untitled");
+      this.currentScope = scope;
+      this.refreshVariablesView(scope);
+    });
+
+    this.registerMarkdownPostProcessor(async (el, ctx) => {
+      const textNodes: Text[] = [];
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        textNodes.push(node as Text);
+      }
+
+      const inlinePattern = /(^|[^\S\r\n])=\s+([^=\n]+?)(?=(?:\s{2,}|\n|[.,;:!?](?![0-9A-Za-z])|$))/g;
+      const filePath = ctx.sourcePath || "untitled";
+      let matched = false;
+
+      for (const textNode of textNodes) {
+        const parent = textNode.parentElement;
+        if (!parent) continue;
+        if (parent.closest("code, pre, .calc-output, .calc-inline")) continue;
+
+        const content = textNode.nodeValue;
+        if (!content) continue;
+
+        inlinePattern.lastIndex = 0;
+        let lastIndex = 0;
+        let match: RegExpExecArray | null;
+        let hasReplacement = false;
+        const frag = document.createDocumentFragment();
+
+        while ((match = inlinePattern.exec(content)) !== null) {
+          hasReplacement = true;
+          const leading = match[1] ?? "";
+          const start = match.index;
+          const before = content.slice(lastIndex, start) + leading;
+          if (before) frag.appendChild(document.createTextNode(before));
+
+          const expr = match[2].trim();
+          const span = await this.calc.evaluateInline(expr, ctx);
+          frag.appendChild(span);
+
+          lastIndex = inlinePattern.lastIndex;
+        }
+
+        if (!hasReplacement) continue;
+
+        const tail = content.slice(lastIndex);
+        if (tail) frag.appendChild(document.createTextNode(tail));
+
+        textNode.replaceWith(frag);
+        matched = true;
+      }
+
+      if (matched) {
+        this.currentScope = this.calc.getScope(filePath);
+        this.refreshVariablesView(this.currentScope);
+      }
     });
 
     this.addCommand({

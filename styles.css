@@ -1,8 +1,12 @@
 .calc-output { font-family: var(--font-text); line-height: 1.6; }
 .calc-line { display: flex; gap: .5rem; align-items: baseline; }
-.calc-line .lhs { font-weight: 600; }
-.calc-line .rhs { font-variant-numeric: tabular-nums; }
+.calc-line .lhs,
+.calc-inline .lhs { font-weight: 600; }
+.calc-line .rhs,
+.calc-inline .rhs { font-variant-numeric: tabular-nums; }
 .calc-error { color: var(--color-red); }
+.calc-inline { display: inline-flex; align-items: baseline; gap: .25rem; font-variant-numeric: tabular-nums; padding: 0 .25em; border-radius: 4px; background-color: var(--background-secondary); }
+.calc-inline-error { color: var(--color-red); font-weight: 600; }
 .variables-panel { padding: 12px; }
 .variables-panel .var-item { display: flex; gap: .5rem; margin: 4px 0; }
 .variables-panel .var-name { font-weight: 600; }
