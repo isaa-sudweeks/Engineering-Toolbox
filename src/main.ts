@@ -195,18 +195,6 @@ export default class EngineeringToolkitPlugin extends Plugin {
     });
 
     this.addCommand({
-      id: "reset-current-scope",
-      name: "Reset current note scope",
-      callback: () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file) return;
-        this.calc.clearScope(file.path);
-        this.currentScope = null;
-        this.refreshVariablesView(null);
-      }
-    });
-
-    this.addCommand({
       id: "new-experiment-note",
       name: "New Experiment Note",
       callback: async () => {
