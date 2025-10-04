@@ -265,10 +265,20 @@ export default class EngineeringToolkitPlugin extends Plugin {
       return;
     }
     if (!this.varsLeaf || this.varsLeaf?.getViewState().type !== VIEW_TYPE_VARS) {
-      this.varsLeaf = this.app.workspace.getRightLeaf(false);
+      let varsLeaf = this.app.workspace.getRightLeaf(false);
+      if (!varsLeaf) {
+        varsLeaf = this.app.workspace.getRightLeaf(true);
+      }
+      if (!varsLeaf) {
+        new Notice("Unable to open variables panel.");
+        return;
+      }
+      this.varsLeaf = varsLeaf;
       await this.varsLeaf.setViewState({ type: VIEW_TYPE_VARS, active: true });
     }
-    this.app.workspace.revealLeaf(this.varsLeaf);
+    if (this.varsLeaf) {
+      this.app.workspace.revealLeaf(this.varsLeaf);
+    }
     this.refreshVariablesView(this.currentScope);
   }
 
