@@ -17,6 +17,7 @@ const scopeRefreshField = StateField.define<number>({
 
 export class ScopeCompletionManager {
   private plugin: EngineeringToolkitPlugin;
+  private warnedAboutFallback = false;
   readonly extension: Extension;
 
   constructor(plugin: EngineeringToolkitPlugin) {
@@ -32,7 +33,7 @@ export class ScopeCompletionManager {
 
   notifyChanged() {
     const stamp = Date.now();
-    this.plugin.app.workspace.iterateAllLeaves(leaf => {
+    this.forEachEditorLeaf(leaf => {
       const cm = (leaf.view as any)?.editor?.cm;
       if (!cm) return;
       cm.dispatch({ effects: scopeRefreshEffect.of(stamp) });
@@ -42,7 +43,7 @@ export class ScopeCompletionManager {
 
   updateEnabledState() {
     const enabled = this.plugin.settings.autocompleteEnabled;
-    this.plugin.app.workspace.iterateAllLeaves(leaf => {
+    this.forEachEditorLeaf(leaf => {
       const cm = (leaf.view as any)?.editor?.cm;
       if (!cm) return;
       if (!enabled) {
@@ -95,6 +96,35 @@ export class ScopeCompletionManager {
       }
     }
     return inCalc;
+  }
+
+  private forEachEditorLeaf(callback: (leaf: any) => void) {
+    const workspace: any = this.plugin.app.workspace as any;
+    const iterateAllLeaves = workspace?.iterateAllLeaves;
+    if (typeof iterateAllLeaves === "function") {
+      iterateAllLeaves.call(workspace, callback);
+      return;
+    }
+
+    const leaves: any[] = [];
+    const getLeavesOfType = workspace?.getLeavesOfType;
+    if (typeof getLeavesOfType === "function") {
+      for (const type of ["markdown"]) {
+        const typeLeaves = getLeavesOfType.call(workspace, type);
+        if (Array.isArray(typeLeaves)) leaves.push(...typeLeaves);
+      }
+    }
+
+    if (!this.warnedAboutFallback) {
+      console.warn(
+        "Engineering Toolkit: workspace.iterateAllLeaves is not available; falling back to getLeavesOfType."
+      );
+      this.warnedAboutFallback = true;
+    }
+
+    for (const leaf of leaves) {
+      callback(leaf);
+    }
   }
 }
 
